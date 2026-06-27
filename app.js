@@ -244,13 +244,42 @@ function levelCompletionPercent(profile, level){
   return Math.round((vocabPct + grammarPct + listenPct + speakPct) / 4);
 }
 
+// Mở khoá level kế tiếp đòi hỏi CẢ 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói)
+// của level hiện tại đều đạt 100% — không tính trung bình như trước (trước
+// đây có thể "bù trừ" giữa các kỹ năng, ví dụ giỏi từ vựng nhưng chưa luyện
+// nói cũng đủ điều kiện mở, điều này không đúng yêu cầu).
+function levelSkillBreakdown(profile, level){
+  const vItems = VOCAB_DATA.filter(v=>v.level===level);
+  const gItems = GRAMMAR_DATA.filter(g=>g.level===level);
+  const lItems = LISTEN_DATA.filter(l=>l.level===level);
+  const sItems = SPEAK_DATA.filter(s=>s.level===level);
+
+  const pct = (items, doneCheck)=>{
+    if(items.length===0) return 100;
+    const done = items.filter(doneCheck).length;
+    return Math.round(done/items.length*100);
+  };
+
+  return {
+    vocab: pct(vItems, v=> (profile.vocab[v.id]||{}).box >= 5),
+    grammar: pct(gItems, g=> !!profile.grammarDone[g.id]),
+    listen: pct(lItems, l=> !!profile.listenDone[l.id]),
+    speak: pct(sItems, s=> !!profile.speakDone[s.id])
+  };
+}
+
+function isLevelFullyDone(profile, level){
+  const b = levelSkillBreakdown(profile, level);
+  return b.vocab >= 100 && b.grammar >= 100 && b.listen >= 100 && b.speak >= 100;
+}
+
 // Level cao nhất mà hồ sơ đã mở khoá (level 1 luôn mở)
 function maxUnlockedLevel(profile){
   const levels = LEVEL_DATA.map(l=>l.level).sort((a,b)=>a-b);
   let unlocked = levels[0] || 1;
   for(let i=0;i<levels.length-1;i++){
     const lvl = levels[i];
-    if(levelCompletionPercent(profile, lvl) >= LEVEL_UNLOCK_PERCENT){
+    if(isLevelFullyDone(profile, lvl)){
       unlocked = levels[i+1];
     } else {
       break;
@@ -265,7 +294,7 @@ function isLevelUnlocked(profile, level){
 
 function selectLevel(level){
   if(!isLevelUnlocked(state, level)){
-    showToast("🔒 Hãy hoàn thành level hiện tại trước khi mở level này.");
+    showToast("🔒 Hãy hoàn thành 100% cả 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói) của level hiện tại trước khi mở level này.");
     return;
   }
   state.currentLevel = level;
@@ -286,7 +315,7 @@ function renderLevelPills(containerId, tabName){
     const isActive = l.level === state.currentLevel;
     const pct = levelCompletionPercent(state, l.level);
     return `<span class="level-pill ${isActive?'active':''} ${isUnlocked?'':'locked'}"
-        onclick="selectLevel(${l.level})" title="${isUnlocked ? l.desc : 'Hoàn thành ' + LEVEL_UNLOCK_PERCENT + '% level trước để mở khoá'}">
+        onclick="selectLevel(${l.level})" title="${isUnlocked ? l.desc : 'Hoàn thành 100% cả 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói) của level trước để mở khoá'}">
         ${isUnlocked ? '' : '🔒 '}${l.name}${isUnlocked ? ' · ' + pct + '%' : ''}
       </span>`;
   }).join("");
@@ -615,6 +644,7 @@ let vocabChecked = false; // đã bấm "Kiểm tra" cho từ hiện tại chưa
 let vocabWasCorrect = false;
 let vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng (có lỗi chính tả nhỏ)
 let vocabLastUserAnswer = ""; // lưu lại nội dung đã gõ để hiển thị so sánh sau khi input bị thay bằng feedback
+let vocabHintUsed = false; // đã bấm nút Gợi ý cho từ hiện tại chưa (reset mỗi khi sang từ mới)
 
 // ----- Bài kiểm tra tổng hợp sau khi ôn xong 1 lượt từ vựng -----
 let vocabQuizWords = [];   // các từ vừa ôn trong lượt này, dùng để tạo bài kiểm tra
@@ -654,6 +684,16 @@ function buildVocabQueue(){
   vocabQueue = shuffleArray(vocabQueue);
   vocabIdx = 0;
   vocabChecked = false;
+  vocabHintUsed = false;
+  renderVocabCard();
+}
+
+// Hiện gợi ý nghĩa tiếng Việt đầy đủ khi người dùng bí, không nhớ ra từ.
+// Đánh đổi: nếu sau đó trả lời đúng, điểm thưởng nhận được sẽ ít hơn bình
+// thường (xem checkVocabAnswer) — khuyến khích người học tự nhớ trước.
+function useVocabHint(){
+  if(vocabChecked || vocabHintUsed) return;
+  vocabHintUsed = true;
   renderVocabCard();
 }
 
@@ -696,7 +736,9 @@ function renderVocabCard(){
         ${vocabChecked ? `
           <div class="meaning">${v.meaning}</div>
           <div class="example">"${v.example}"</div>
-        ` : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`}
+        ` : (vocabHintUsed
+              ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.meaning)}</strong></div>`
+              : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`)}
       </div>
       <button class="btn secondary" onclick="speak('${v.word.replace(/'/g,"\\'")}')">🔊 Nghe phát âm</button>
       ${!vocabChecked ? `
@@ -705,6 +747,7 @@ function renderVocabCard(){
           onkeydown="if(event.key==='Enter') checkVocabAnswer();" autocomplete="off">
         <button class="vocab-check-btn" onclick="checkVocabAnswer()">Kiểm tra</button>
       </div>
+      ${!vocabHintUsed ? `<button class="small-btn" style="margin-top:8px;" onclick="useVocabHint()">💡 Gợi ý (sẽ giảm điểm thưởng nếu trả lời đúng)</button>` : ""}
       ` : `
       <div class="vocab-feedback ${vocabWasCorrect ? 'correct' : 'wrong'}">
         ${vocabWasCorrect
@@ -900,7 +943,9 @@ function checkVocabAnswer(){
   if(vocabWasCorrect){
     vs.box = Math.min(5, vs.box+1);
     intervalDays = [1,2,4,7,14][vs.box-1] || 14;
-    earned = POINTS.vocabGood;
+    // Nếu đã bấm nút Gợi ý cho từ này, điểm thưởng giảm một nửa (khuyến khích
+    // người học tự nhớ trước khi xin gợi ý).
+    earned = vocabHintUsed ? Math.round(POINTS.vocabGood/2) : POINTS.vocabGood;
     if(vs.box>=5) vs.learned = true;
   } else {
     vs.box = 1;
@@ -919,6 +964,7 @@ function checkVocabAnswer(){
 function nextVocabCard(){
   vocabIdx++;
   vocabChecked = false;
+  vocabHintUsed = false;
   renderVocabCard();
 }
 
