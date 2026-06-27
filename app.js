@@ -1,3 +1,55 @@
+// ============ XỬ LÝ BÀN PHÍM ẢO TRÊN ĐIỆN THOẠI ============
+// Khi bàn phím ảo mở, trình duyệt thu nhỏ khung nhìn (visualViewport) nhưng
+// thanh tabbar (position:fixed) và phần nội dung phía dưới ô nhập vẫn có thể
+// bị che. Ta theo dõi visualViewport để: (1) ẩn tạm thanh tabbar dưới đáy,
+// (2) cuộn ô input/nút đang active vào vùng nhìn thấy được.
+function setupKeyboardAvoidance(){
+  if(typeof window === "undefined") return;
+
+  function isTypingTarget(el){
+    return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+  }
+
+  function scrollActiveIntoView(){
+    const el = document.activeElement;
+    if(isTypingTarget(el) && el.scrollIntoView){
+      setTimeout(()=>{ el.scrollIntoView({block:"center", behavior:"smooth"}); }, 80);
+    }
+  }
+
+  document.addEventListener("focusin", (e)=>{
+    if(isTypingTarget(e.target)){
+      document.body.classList.add("keyboard-open");
+      scrollActiveIntoView();
+    }
+  });
+  document.addEventListener("focusout", (e)=>{
+    if(isTypingTarget(e.target)){
+      document.body.classList.remove("keyboard-open");
+    }
+  });
+
+  // Một số trình duyệt Android thu nhỏ visualViewport khi mở bàn phím —
+  // dùng thêm tín hiệu này để chắc ăn việc cuộn vào vùng nhìn thấy.
+  if(window.visualViewport){
+    let lastHeight = window.visualViewport.height;
+    window.visualViewport.addEventListener("resize", ()=>{
+      const shrunk = window.visualViewport.height < lastHeight - 100;
+      lastHeight = window.visualViewport.height;
+      if(shrunk && isTypingTarget(document.activeElement)){
+        scrollActiveIntoView();
+      }
+    });
+  }
+}
+if(typeof document !== "undefined"){
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", setupKeyboardAvoidance);
+  } else {
+    setupKeyboardAvoidance();
+  }
+}
+
 // ============ STORAGE: NHIỀU HỒ SƠ ============
 const STORE_KEY = "ehoc_profiles_v2";
 const OLD_STORE_KEY = "ehoc_state_v1"; // dữ liệu phiên bản cũ (1 người dùng)
