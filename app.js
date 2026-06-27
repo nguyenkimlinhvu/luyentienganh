@@ -243,6 +243,7 @@ function goTab(name){
   if(name==="speak") renderSpeakTab();
   if(name==="home") renderHomeStats();
   if(name==="group") renderGroupTab();
+  if(name==="aichat") renderAiChatTab();
   window.scrollTo(0,0);
 }
 
@@ -427,11 +428,12 @@ function renderBadgesPreview(){
   wrap.innerHTML = earned.map(b=>`<span class="badge-chip" title="${b.desc}">${b.icon} ${b.name}</span>`).join("");
 }
 
-// ============ VOCAB (SRS Leitner) ============
+// ============ VOCAB (SRS Leitner + gõ nghĩa để kiểm tra) ============
 let currentTopic = "Tất cả";
 let vocabQueue = [];
 let vocabIdx = 0;
-let vocabFlipped = false;
+let vocabChecked = false; // đã bấm "Kiểm tra" cho từ hiện tại chưa
+let vocabWasCorrect = false;
 
 function getVocabState(id){
   if(!state.vocab[id]) state.vocab[id] = {box:1, due:todayStr(), learned:false};
@@ -462,7 +464,7 @@ function buildVocabQueue(){
   vocabQueue = pool.filter(v=>isDue(v.id));
   if(vocabQueue.length===0) vocabQueue = pool;
   vocabIdx = 0;
-  vocabFlipped = false;
+  vocabChecked = false;
   renderVocabCard();
 }
 
@@ -470,6 +472,16 @@ function renderVocabTab(){
   renderLevelPills("vocabLevelPills", "vocab");
   renderTopicPills();
   buildVocabQueue();
+}
+
+// Chuẩn hoá chuỗi để so khớp linh hoạt: bỏ hoa/thường, dấu câu, khoảng trắng thừa
+function normalizeAnswer(s){
+  return (s||"")
+    .toLowerCase()
+    .normalize("NFC")
+    .replace(/[.,!?;:"'()\-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function renderVocabCard(){
@@ -488,45 +500,69 @@ function renderVocabCard(){
   area.innerHTML = `
     <div class="flash-wrap">
       <div class="progress-bar" style="width:100%;"><div class="fill" style="width:${(vocabIdx/vocabQueue.length*100)}%"></div></div>
-      <div class="flashcard" id="flashcardEl" onclick="flipCard()">
+      <div class="flashcard" id="flashcardEl">
         <div class="word">${v.word}</div>
         <div class="phon">${v.phon}</div>
-        ${vocabFlipped ? `
+        ${vocabChecked ? `
           <div class="meaning">${v.meaning}</div>
           <div class="example">"${v.example}"</div>
-        ` : `<div class="hint">Nhấn để xem nghĩa 👆</div>`}
+        ` : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`}
       </div>
-      <button class="btn secondary" onclick="event.stopPropagation();speak('${v.word.replace(/'/g,"\\'")}')">🔊 Nghe phát âm</button>
-      ${vocabFlipped ? `
-      <div class="rate-row">
-        <button class="rate-again" onclick="rateCard('again')">Quên</button>
-        <button class="rate-hard" onclick="rateCard('hard')">Khó</button>
-        <button class="rate-good" onclick="rateCard('good')">Dễ</button>
-      </div>` : ""}
+      <button class="btn secondary" onclick="speak('${v.word.replace(/'/g,"\\'")}')">🔊 Nghe phát âm</button>
+      ${!vocabChecked ? `
+      <div class="vocab-input-row">
+        <input type="text" id="vocabAnswerInput" placeholder="Nhập nghĩa tiếng Việt..."
+          onkeydown="if(event.key==='Enter') checkVocabAnswer();" autocomplete="off">
+        <button class="vocab-check-btn" onclick="checkVocabAnswer()">Kiểm tra</button>
+      </div>
+      ` : `
+      <div class="vocab-feedback ${vocabWasCorrect ? 'correct' : 'wrong'}">
+        ${vocabWasCorrect ? '✅ Chính xác!' : '❌ Chưa đúng — học lại từ này nhé.'}
+      </div>
+      <button class="vocab-next-btn" onclick="nextVocabCard()">Tiếp tục →</button>
+      `}
       <p class="muted">Hộp ${vs.box}/5 · ${vocabIdx+1} / ${vocabQueue.length} · ⭐ ${state.points||0} điểm</p>
     </div>
   `;
+  if(!vocabChecked){
+    const inputEl = document.getElementById("vocabAnswerInput");
+    if(inputEl) inputEl.focus();
+  }
 }
 
-function flipCard(){
-  vocabFlipped = !vocabFlipped;
+function checkVocabAnswer(){
+  if(vocabChecked) return;
+  const v = vocabQueue[vocabIdx];
+  const inputEl = document.getElementById("vocabAnswerInput");
+  const userAnswer = normalizeAnswer(inputEl ? inputEl.value : "");
+  const correctAnswer = normalizeAnswer(v.meaning);
+  vocabWasCorrect = userAnswer.length>0 && userAnswer===correctAnswer;
+  vocabChecked = true;
+
+  const vs = getVocabState(v.id);
+  let intervalDays, earned;
+  if(vocabWasCorrect){
+    vs.box = Math.min(5, vs.box+1);
+    intervalDays = [1,2,4,7,14][vs.box-1] || 14;
+    earned = POINTS.vocabGood;
+    if(vs.box>=5) vs.learned = true;
+  } else {
+    vs.box = 1;
+    intervalDays = 0;
+    earned = POINTS.vocabAgain;
+    // Sai thì học lại từ này ngay trong cùng lượt: đưa về cuối hàng đợi
+    vocabQueue.push(v);
+  }
+  const due = new Date(Date.now() + intervalDays*86400000);
+  vs.due = due.toISOString().slice(0,10);
+  addPoints(earned);
+  markActivity();
   renderVocabCard();
 }
 
-function rateCard(result){
-  const v = vocabQueue[vocabIdx];
-  const vs = getVocabState(v.id);
-  let intervalDays, earned;
-  if(result==="again"){ vs.box = 1; intervalDays = 0; earned = POINTS.vocabAgain; }
-  else if(result==="hard"){ vs.box = Math.max(1, vs.box); intervalDays = vs.box; earned = POINTS.vocabHard; }
-  else { vs.box = Math.min(5, vs.box+1); intervalDays = [1,2,4,7,14][vs.box-1] || 14; earned = POINTS.vocabGood; }
-  const due = new Date(Date.now() + intervalDays*86400000);
-  vs.due = due.toISOString().slice(0,10);
-  if(vs.box>=5) vs.learned = true;
-  addPoints(earned);
-  markActivity();
+function nextVocabCard(){
   vocabIdx++;
-  vocabFlipped = false;
+  vocabChecked = false;
   renderVocabCard();
 }
 
@@ -646,6 +682,10 @@ function getRecognizer(){
 
 function renderSpeakTab(){
   renderLevelPills("speakLevelPills", "speak");
+  if(speakMode === "roleplay"){
+    startRoleplay();
+    return;
+  }
   const area = document.getElementById("speakArea");
   const supported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   const items = SPEAK_DATA.filter(item=>item.level===state.currentLevel);
@@ -742,6 +782,252 @@ function scoreSpeak(id, said){
     markActivity();
   } else {
     status.innerHTML = `<span style="color:var(--bad);font-weight:600;">❌ Thử lại nhé (${pct}% khớp)</span><br>Bạn nói: "${said}"`;
+  }
+}
+
+// ============ AI: CẤU HÌNH WORKER PROXY ============
+const AI_WORKER_KEY = "ehoc_ai_worker_url";
+
+function getAiWorkerUrl(){
+  return localStorage.getItem(AI_WORKER_KEY) || "";
+}
+
+function setAiWorkerUrl(url){
+  localStorage.setItem(AI_WORKER_KEY, url.trim());
+}
+
+function promptSetupAiWorker(){
+  const current = getAiWorkerUrl();
+  const url = prompt(
+    "Dán URL Cloudflare Worker (backend giữ API key Claude) vào đây.\nVí dụ: https://ten-worker.ten-subdomain.workers.dev",
+    current
+  );
+  if(url !== null){
+    setAiWorkerUrl(url);
+    showToast(url.trim() ? "✅ Đã lưu địa chỉ AI." : "Đã xoá địa chỉ AI.");
+  }
+  return getAiWorkerUrl();
+}
+
+async function callAiWorker(mode, extra, message, history){
+  const url = getAiWorkerUrl();
+  if(!url){
+    throw new Error("CHƯA_CẤU_HÌNH");
+  }
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({
+      mode,
+      level: state.currentLevel || 1,
+      message,
+      history: history || [],
+    }, extra || {})),
+  });
+  const data = await resp.json().catch(()=>({}));
+  if(!resp.ok || data.error){
+    throw new Error(data.error || ("Lỗi server (" + resp.status + ")"));
+  }
+  return data.reply;
+}
+
+// ============ AI CHAT TỰ DO (tab Chat AI) ============
+let aiChatHistory = []; // [{role:"user"|"assistant", content:"..."}]
+let aiChatBusy = false;
+
+function renderAiChatSetupNote(){
+  const wrap = document.getElementById("aiChatSetupNote");
+  if(!wrap) return;
+  const url = getAiWorkerUrl();
+  wrap.innerHTML = url
+    ? `<p class="ai-setup-note">🔗 Đang dùng AI server: <code>${escapeHtml(url)}</code> · <span style="color:var(--primary);cursor:pointer;text-decoration:underline;" onclick="promptSetupAiWorker();renderAiChatSetupNote();">Đổi địa chỉ</span></p>`
+    : `<p class="ai-setup-note">⚠️ Chưa cấu hình AI server. <span style="color:var(--primary);cursor:pointer;text-decoration:underline;" onclick="promptSetupAiWorker();renderAiChatSetupNote();">Nhấn vào đây để nhập địa chỉ Cloudflare Worker</span> (xem hướng dẫn deploy đi kèm).</p>`;
+}
+
+function renderAiChatHistory(){
+  const wrap = document.getElementById("aiChatHistory");
+  if(!wrap) return;
+  if(aiChatHistory.length===0){
+    wrap.innerHTML = `<div class="chat-bubble note">Hãy bắt đầu trò chuyện bằng tiếng Anh ở dưới 👇</div>`;
+    return;
+  }
+  wrap.innerHTML = aiChatHistory.map(m=>
+    `<div class="chat-bubble ${m.role==='user'?'user':'ai'}">${escapeHtml(m.content)}</div>`
+  ).join("") + (aiChatBusy ? `<div class="chat-bubble ai typing-dots">AI đang trả lời...</div>` : "");
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function renderAiChatTab(){
+  renderAiChatSetupNote();
+  renderAiChatHistory();
+}
+
+async function sendAiChat(){
+  if(aiChatBusy) return;
+  const input = document.getElementById("aiChatInput");
+  const text = input.value.trim();
+  if(!text) return;
+
+  if(!getAiWorkerUrl()){
+    promptSetupAiWorker();
+    if(!getAiWorkerUrl()) return;
+    renderAiChatSetupNote();
+  }
+
+  aiChatHistory.push({role:"user", content:text});
+  input.value = "";
+  aiChatBusy = true;
+  renderAiChatHistory();
+
+  try{
+    const reply = await callAiWorker("chat", {}, text, aiChatHistory.slice(0,-1));
+    aiChatHistory.push({role:"assistant", content:reply});
+    markActivity();
+  }catch(err){
+    const msg = err.message === "CHƯA_CẤU_HÌNH"
+      ? "⚠️ Chưa cấu hình AI server."
+      : "⚠️ Lỗi: " + err.message;
+    aiChatHistory.push({role:"assistant", content:msg});
+  }finally{
+    aiChatBusy = false;
+    renderAiChatHistory();
+  }
+}
+
+function resetAiChat(){
+  aiChatHistory = [];
+  renderAiChatHistory();
+}
+
+// ============ AI ROLEPLAY (trong tab Nói) ============
+let speakMode = "practice"; // "practice" hoặc "roleplay"
+let roleplayCurrent = null;
+let roleplayHistory = [];
+let roleplayBusy = false;
+
+function toggleSpeakMode(){
+  speakMode = speakMode === "practice" ? "roleplay" : "practice";
+  const btn = document.getElementById("speakModeBtn");
+  const hint = document.getElementById("speakModeHint");
+  const speakArea = document.getElementById("speakArea");
+  const roleplayArea = document.getElementById("roleplayArea");
+  if(speakMode === "roleplay"){
+    btn.textContent = "📋 Chế độ luyện câu mẫu";
+    hint.textContent = "AI sẽ đóng vai một nhân vật và trò chuyện cùng bạn. Hãy trả lời bằng tiếng Anh.";
+    speakArea.style.display = "none";
+    roleplayArea.style.display = "block";
+    startRoleplay();
+  } else {
+    btn.textContent = "🎭 Chế độ AI đóng vai";
+    hint.textContent = "Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.";
+    speakArea.style.display = "block";
+    roleplayArea.style.display = "none";
+  }
+}
+
+function startRoleplay(){
+  const pool = ROLEPLAY_DATA.filter(r=>r.level===state.currentLevel);
+  if(pool.length===0){
+    document.getElementById("roleplayArea").innerHTML = `<div class="card empty-state">Chưa có tình huống roleplay cho level này.</div>`;
+    return;
+  }
+  roleplayCurrent = pool[Math.floor(Math.random()*pool.length)];
+  roleplayHistory = [{role:"assistant", content: roleplayCurrent.opener}];
+  renderRoleplayArea();
+}
+
+function renderRoleplayArea(){
+  const area = document.getElementById("roleplayArea");
+  if(!roleplayCurrent){
+    area.innerHTML = "";
+    return;
+  }
+  area.innerHTML = `
+    <div class="role-card">
+      <div class="role-title">${roleplayCurrent.icon} AI đóng vai: ${escapeHtml(roleplayCurrent.role)}</div>
+      <div class="role-scenario">${escapeHtml(roleplayCurrent.scenario)}</div>
+    </div>
+    <div id="roleplaySetupNote"></div>
+    <div class="card">
+      <div class="chat-wrap" style="height:auto;min-height:260px;">
+        <div class="chat-history" id="roleplayHistoryWrap"></div>
+        <div class="chat-input-row">
+          <input type="text" id="roleplayInput" placeholder="Type your answer in English..." onkeydown="if(event.key==='Enter')sendRoleplayReply()">
+          <button class="btn" onclick="sendRoleplayReply()">Gửi</button>
+        </div>
+      </div>
+      <button class="small-btn" style="margin-top:10px;" onclick="startRoleplay()">🔄 Đổi tình huống khác</button>
+    </div>
+  `;
+  renderRoleplaySetupNote();
+  renderRoleplayHistory();
+}
+
+function renderRoleplaySetupNote(){
+  const wrap = document.getElementById("roleplaySetupNote");
+  if(!wrap) return;
+  const url = getAiWorkerUrl();
+  wrap.innerHTML = url ? "" :
+    `<p class="ai-setup-note">⚠️ Chưa cấu hình AI server. <span style="color:var(--primary);cursor:pointer;text-decoration:underline;" onclick="promptSetupAiWorker();renderRoleplaySetupNote();">Nhấn để nhập địa chỉ Cloudflare Worker</span>.</p>`;
+}
+
+function renderRoleplayHistory(){
+  const wrap = document.getElementById("roleplayHistoryWrap");
+  if(!wrap) return;
+  wrap.innerHTML = roleplayHistory.map(m=>{
+    if(m.role === "assistant" && m.content.includes("📝")){
+      const [main, note] = splitAiNote(m.content);
+      return `<div class="chat-bubble ai">${escapeHtml(main)}</div>` +
+        (note ? `<div class="chat-bubble note">${escapeHtml(note)}</div>` : "");
+    }
+    return `<div class="chat-bubble ${m.role==='user'?'user':'ai'}">${escapeHtml(m.content)}</div>`;
+  }).join("") + (roleplayBusy ? `<div class="chat-bubble ai typing-dots">AI đang trả lời...</div>` : "");
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// Tách phần hội thoại và phần "📝 Nhận xét:" / "📝 Gợi ý:" trong câu trả lời AI
+function splitAiNote(content){
+  const idx = content.indexOf("📝");
+  if(idx === -1) return [content, ""];
+  return [content.slice(0, idx).trim(), content.slice(idx).trim()];
+}
+
+async function sendRoleplayReply(){
+  if(roleplayBusy || !roleplayCurrent) return;
+  const input = document.getElementById("roleplayInput");
+  const text = input.value.trim();
+  if(!text) return;
+
+  if(!getAiWorkerUrl()){
+    promptSetupAiWorker();
+    if(!getAiWorkerUrl()) return;
+    renderRoleplaySetupNote();
+  }
+
+  roleplayHistory.push({role:"user", content:text});
+  input.value = "";
+  roleplayBusy = true;
+  renderRoleplayHistory();
+
+  try{
+    const reply = await callAiWorker("roleplay", {
+      role: roleplayCurrent.role,
+      scenario: roleplayCurrent.scenario,
+    }, text, roleplayHistory.slice(0,-1));
+    roleplayHistory.push({role:"assistant", content:reply});
+    if(!state.speakDone["rp_"+roleplayCurrent.id]){
+      state.speakDone["rp_"+roleplayCurrent.id] = true;
+      addPoints(POINTS.speakGood);
+    }
+    markActivity();
+  }catch(err){
+    const msg = err.message === "CHƯA_CẤU_HÌNH"
+      ? "⚠️ Chưa cấu hình AI server."
+      : "⚠️ Lỗi: " + err.message;
+    roleplayHistory.push({role:"assistant", content:msg});
+  }finally{
+    roleplayBusy = false;
+    renderRoleplayHistory();
   }
 }
 
