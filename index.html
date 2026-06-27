@@ -235,6 +235,14 @@
   .role-card .role-title{font-weight:700;font-size:14px;color:var(--primary-dark);}
   .role-card .role-scenario{font-size:13px;color:var(--text);margin-top:4px;}
   .typing-dots{display:inline-block;}
+
+  /* Speak mode tabs (Luyện câu / AI đóng vai / Bảng IPA) */
+  .speak-mode-tabs{display:flex;gap:6px;background:#f0f1f6;border-radius:12px;padding:4px;}
+  .speak-mode-tab{
+    flex:1;background:none;border:none;border-radius:9px;padding:9px 4px;
+    font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap;
+  }
+  .speak-mode-tab.active{background:var(--primary);color:#fff;}
 </style>
 </head>
 <body>
@@ -360,11 +368,13 @@
   <!-- SPEAK -->
   <section class="screen" id="screen-speak">
     <div class="card">
-      <div class="row-between">
-        <h2 style="margin:0;">Luyện nói & phát âm</h2>
-        <button class="small-btn" onclick="toggleSpeakMode()" id="speakModeBtn">🎭 Chế độ AI đóng vai</button>
+      <h2 style="margin:0 0 10px;">Luyện nói & phát âm</h2>
+      <div class="speak-mode-tabs" id="speakModeTabs">
+        <button class="speak-mode-tab" data-mode="practice" onclick="setSpeakMode('practice')">📋 Luyện câu</button>
+        <button class="speak-mode-tab" data-mode="roleplay" onclick="setSpeakMode('roleplay')">🎭 AI đóng vai</button>
+        <button class="speak-mode-tab" data-mode="ipa" onclick="setSpeakMode('ipa')">🔤 Bảng IPA</button>
       </div>
-      <p class="muted" id="speakModeHint">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
+      <p class="muted" id="speakModeHint" style="margin-top:8px;">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
       <div id="speakLevelPills"></div>
     </div>
     <div id="speakArea"></div>

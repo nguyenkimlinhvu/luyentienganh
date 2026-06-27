@@ -851,6 +851,7 @@ function getRecognizer(){
 
 function renderSpeakTab(){
   renderLevelPills("speakLevelPills", "speak");
+  syncSpeakModeTabsUI();
   if(speakMode === "roleplay"){
     startRoleplay();
     return;
@@ -1124,34 +1125,39 @@ let roleplayCurrent = null;
 let roleplayHistory = [];
 let roleplayBusy = false;
 
-// Xoay vòng 3 chế độ: practice (luyện câu mẫu) -> roleplay (AI đóng vai) -> ipa (bảng IPA) -> practice...
-const SPEAK_MODES = ["practice", "roleplay", "ipa"];
-const SPEAK_MODE_LABELS = {
-  practice: { btn:"🎭 Chế độ AI đóng vai", hint:"Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo." },
-  roleplay: { btn:"🔤 Bảng phiên âm IPA", hint:"AI sẽ đóng vai một nhân vật và trò chuyện cùng bạn. Hãy trả lời bằng tiếng Anh." },
-  ipa: { btn:"📋 Chế độ luyện câu mẫu", hint:"Học bảng phiên âm IPA — bấm 🔊 để nghe từng âm." },
+// 3 chế độ trong tab Nói: practice (luyện câu mẫu) / roleplay (AI đóng vai) / ipa (bảng IPA)
+const SPEAK_MODE_HINTS = {
+  practice: "Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.",
+  roleplay: "AI sẽ đóng vai một nhân vật và trò chuyện cùng bạn. Hãy trả lời bằng tiếng Anh.",
+  ipa: "Học bảng phiên âm IPA — bấm 🔊 để nghe từng âm.",
 };
 
-function toggleSpeakMode(){
-  const idx = SPEAK_MODES.indexOf(speakMode);
-  speakMode = SPEAK_MODES[(idx+1) % SPEAK_MODES.length];
-
-  const btn = document.getElementById("speakModeBtn");
+function syncSpeakModeTabsUI(){
+  const mode = speakMode;
   const hint = document.getElementById("speakModeHint");
   const speakArea = document.getElementById("speakArea");
   const roleplayArea = document.getElementById("roleplayArea");
   const ipaArea = document.getElementById("ipaArea");
+  const tabsWrap = document.getElementById("speakModeTabs");
 
-  const labels = SPEAK_MODE_LABELS[speakMode];
-  btn.textContent = labels.btn;
-  hint.textContent = labels.hint;
+  if(hint) hint.textContent = SPEAK_MODE_HINTS[mode] || "";
+  if(speakArea) speakArea.style.display = mode === "practice" ? "block" : "none";
+  if(roleplayArea) roleplayArea.style.display = mode === "roleplay" ? "block" : "none";
+  if(ipaArea) ipaArea.style.display = mode === "ipa" ? "block" : "none";
 
-  speakArea.style.display = speakMode === "practice" ? "block" : "none";
-  roleplayArea.style.display = speakMode === "roleplay" ? "block" : "none";
-  if(ipaArea) ipaArea.style.display = speakMode === "ipa" ? "block" : "none";
+  if(tabsWrap){
+    tabsWrap.querySelectorAll(".speak-mode-tab").forEach(btn=>{
+      btn.classList.toggle("active", btn.getAttribute("data-mode") === mode);
+    });
+  }
+}
 
-  if(speakMode === "roleplay") startRoleplay();
-  if(speakMode === "ipa") renderIpaTab();
+function setSpeakMode(mode){
+  speakMode = mode;
+  syncSpeakModeTabsUI();
+
+  if(mode === "roleplay") startRoleplay();
+  if(mode === "ipa") renderIpaTab();
 }
 
 // ============ BẢNG PHIÊN ÂM IPA ============
