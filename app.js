@@ -119,8 +119,31 @@ function emptyProfileState(name, avatar){
     activityLog:{},    // "YYYY-MM-DD" -> count
     points:0,
     badges:{},         // badgeId -> true
-    currentLevel:1     // level đang chọn để học
+    currentLevel:1,    // (cũ, giữ lại để tương thích dữ liệu cũ) level đang chọn chung
+    currentLevelVocab:1,   // level đang học riêng cho Từ vựng
+    currentLevelGrammar:1, // level đang học riêng cho Ngữ pháp
+    currentLevelListen:1,  // level đang học riêng cho Nghe
+    currentLevelSpeak:1    // level đang học riêng cho Nói
   };
+}
+
+// Khoá level theo từng kỹ năng, dùng trong state.currentLevel<Skill> và các
+// hàm levelSkillBreakdown/maxUnlockedLevelForSkill bên dưới.
+const SKILL_LEVEL_FIELD = {
+  vocab: "currentLevelVocab",
+  grammar: "currentLevelGrammar",
+  listen: "currentLevelListen",
+  speak: "currentLevelSpeak"
+};
+
+// Đảm bảo hồ sơ cũ (tạo trước khi có tính năng tách level) có đủ 4 field
+// currentLevel<Skill>, lấy giá trị từ currentLevel chung làm điểm khởi đầu
+// để không bị "tụt lùi" so với tiến độ đã có.
+function ensurePerSkillLevels(profile){
+  const fallback = profile.currentLevel || 1;
+  Object.values(SKILL_LEVEL_FIELD).forEach(field=>{
+    if(!profile[field]) profile[field] = fallback;
+  });
 }
 
 function loadDB(){
@@ -224,6 +247,7 @@ function importBackupFile(evt){
       if(db.currentProfileId && db.profiles[db.currentProfileId]){
         state = db.profiles[db.currentProfileId];
         if(!state.currentLevel) state.currentLevel = 1;
+        ensurePerSkillLevels(state);
       } else {
         state = null;
       }
@@ -253,6 +277,7 @@ function setActiveProfile(id){
   db.currentProfileId = id;
   state = db.profiles[id];
   if(!state.currentLevel) state.currentLevel = 1;
+  ensurePerSkillLevels(state);
   saveDB();
 }
 
@@ -293,16 +318,24 @@ function addPoints(amount){
   saveDB();
 }
 
-let lastSeenUnlockedLevel = {};
+const SKILL_LABEL = { vocab:"Từ vựng", grammar:"Ngữ pháp", listen:"Nghe", speak:"Nói" };
+
+// Theo dõi mốc mở khoá đã thấy của TỪNG kỹ năng riêng, để báo toast đúng khi
+// 1 kỹ năng vừa mở level mới (không còn gộp chung 1 mốc cho cả 4 kỹ năng).
+let lastSeenUnlockedLevel = {}; // profileKey -> { vocab:n, grammar:n, listen:n, speak:n }
 function checkLevelUnlock(){
   const profileKey = db.currentProfileId;
-  const before = lastSeenUnlockedLevel[profileKey] || 1;
-  const after = maxUnlockedLevel(state);
-  if(after > before){
-    const lvl = LEVEL_DATA.find(l=>l.level===after);
-    if(lvl) showToast(`🔓 Đã mở khoá ${lvl.name}!`);
-  }
-  lastSeenUnlockedLevel[profileKey] = after;
+  if(!lastSeenUnlockedLevel[profileKey]) lastSeenUnlockedLevel[profileKey] = {};
+  const seen = lastSeenUnlockedLevel[profileKey];
+  Object.keys(SKILL_LEVEL_FIELD).forEach(skill=>{
+    const before = seen[skill] || 1;
+    const after = maxUnlockedLevelForSkill(state, skill);
+    if(after > before){
+      const lvl = LEVEL_DATA.find(l=>l.level===after);
+      if(lvl) showToast(`🔓 ${SKILL_LABEL[skill]}: đã mở khoá ${lvl.name}!`);
+    }
+    seen[skill] = after;
+  });
 }
 
 function countVocabLearned(profile){
@@ -331,42 +364,46 @@ function levelCompletionPercent(profile, level){
   return Math.round((vocabPct + grammarPct + listenPct + speakPct) / 4);
 }
 
-// Mở khoá level kế tiếp đòi hỏi CẢ 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói)
-// của level hiện tại đều đạt 100% — không tính trung bình như trước (trước
-// đây có thể "bù trừ" giữa các kỹ năng, ví dụ giỏi từ vựng nhưng chưa luyện
-// nói cũng đủ điều kiện mở, điều này không đúng yêu cầu).
-function levelSkillBreakdown(profile, level){
-  const vItems = VOCAB_DATA.filter(v=>v.level===level);
-  const gItems = GRAMMAR_DATA.filter(g=>g.level===level);
-  const lItems = LISTEN_DATA.filter(l=>l.level===level);
-  const sItems = SPEAK_DATA.filter(s=>s.level===level);
+// Mở khoá level kế tiếp của MỘT kỹ năng chỉ đòi hỏi chính kỹ năng đó đạt
+// 100% ở level hiện tại — tách biệt hoàn toàn với 3 kỹ năng còn lại. Ví dụ
+// học xong 100% Từ vựng A1 thì Từ vựng có thể lên A2 ngay, không cần chờ
+// Ngữ pháp/Nghe/Nói.
+const SKILL_ITEMS_AND_CHECK = {
+  vocab:   (level)=> ({ items: VOCAB_DATA.filter(v=>v.level===level),   done: (profile,v)=> (profile.vocab[v.id]||{}).box >= 5 }),
+  grammar: (level)=> ({ items: GRAMMAR_DATA.filter(g=>g.level===level), done: (profile,g)=> !!profile.grammarDone[g.id] }),
+  listen:  (level)=> ({ items: LISTEN_DATA.filter(l=>l.level===level),  done: (profile,l)=> !!profile.listenDone[l.id] }),
+  speak:   (level)=> ({ items: SPEAK_DATA.filter(s=>s.level===level),   done: (profile,s)=> !!profile.speakDone[s.id] })
+};
 
-  const pct = (items, doneCheck)=>{
-    if(items.length===0) return 100;
-    const done = items.filter(doneCheck).length;
-    return Math.round(done/items.length*100);
-  };
-
-  return {
-    vocab: pct(vItems, v=> (profile.vocab[v.id]||{}).box >= 5),
-    grammar: pct(gItems, g=> !!profile.grammarDone[g.id]),
-    listen: pct(lItems, l=> !!profile.listenDone[l.id]),
-    speak: pct(sItems, s=> !!profile.speakDone[s.id])
-  };
+function skillCompletionPercent(profile, skill, level){
+  const { items, done } = SKILL_ITEMS_AND_CHECK[skill](level);
+  if(items.length===0) return 100;
+  const doneCount = items.filter(it=>done(profile,it)).length;
+  return Math.round(doneCount/items.length*100);
 }
 
-function isLevelFullyDone(profile, level){
-  const b = levelSkillBreakdown(profile, level);
-  return b.vocab >= 100 && b.grammar >= 100 && b.listen >= 100 && b.speak >= 100;
+function isSkillFullyDone(profile, skill, level){
+  return skillCompletionPercent(profile, skill, level) >= 100;
 }
 
-// Level cao nhất mà hồ sơ đã mở khoá (level 1 luôn mở)
-function maxUnlockedLevel(profile){
+// % hoàn thành của 1 level = trung bình % hoàn thành của 4 kỹ năng trong
+// level đó. Chỉ dùng để HIỂN THỊ (ví dụ trên trang Chính), không dùng để mở
+// khoá level nữa (mở khoá nay tách riêng theo từng kỹ năng).
+function levelCompletionPercent(profile, level){
+  const vocabPct = skillCompletionPercent(profile, "vocab", level);
+  const grammarPct = skillCompletionPercent(profile, "grammar", level);
+  const listenPct = skillCompletionPercent(profile, "listen", level);
+  const speakPct = skillCompletionPercent(profile, "speak", level);
+  return Math.round((vocabPct + grammarPct + listenPct + speakPct) / 4);
+}
+
+// Level cao nhất mà MỘT kỹ năng cụ thể đã mở khoá (level 1 luôn mở)
+function maxUnlockedLevelForSkill(profile, skill){
   const levels = LEVEL_DATA.map(l=>l.level).sort((a,b)=>a-b);
   let unlocked = levels[0] || 1;
   for(let i=0;i<levels.length-1;i++){
     const lvl = levels[i];
-    if(isLevelFullyDone(profile, lvl)){
+    if(isSkillFullyDone(profile, skill, lvl)){
       unlocked = levels[i+1];
     } else {
       break;
@@ -375,34 +412,38 @@ function maxUnlockedLevel(profile){
   return unlocked;
 }
 
-function isLevelUnlocked(profile, level){
-  return level <= maxUnlockedLevel(profile);
+function isLevelUnlockedForSkill(profile, skill, level){
+  return level <= maxUnlockedLevelForSkill(profile, skill);
 }
 
-function selectLevel(level){
-  if(!isLevelUnlocked(state, level)){
-    showToast("🔒 Hãy hoàn thành 100% cả 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói) của level hiện tại trước khi mở level này.");
+function selectLevel(skill, level){
+  if(!isLevelUnlockedForSkill(state, skill, level)){
+    showToast(`🔒 Hãy hoàn thành 100% ${SKILL_LABEL[skill]} ở level hiện tại trước khi mở level này.`);
     return;
   }
-  state.currentLevel = level;
+  state[SKILL_LEVEL_FIELD[skill]] = level;
+  state.currentLevel = level; // giữ đồng bộ field cũ để các nơi khác (vd trang Chính) vẫn hiển thị hợp lý
   saveDB();
   goTab(currentTabForLevelSwitch);
 }
 
 let currentTabForLevelSwitch = "vocab";
 
-// Render thanh chọn level, dùng chung cho 4 tab (vocab/grammar/listen/speak)
+// Render thanh chọn level, dùng riêng cho từng tab theo kỹ năng tương ứng
+// (vocab/grammar/listen/speak) — mỗi tab tự mở khoá độc lập.
 function renderLevelPills(containerId, tabName){
   currentTabForLevelSwitch = tabName;
+  const skill = tabName; // tabName trùng tên kỹ năng: vocab/grammar/listen/speak
   const wrap = document.getElementById(containerId);
   if(!wrap) return;
-  const unlocked = maxUnlockedLevel(state);
+  const unlocked = maxUnlockedLevelForSkill(state, skill);
+  const activeLevel = state[SKILL_LEVEL_FIELD[skill]] || 1;
   wrap.innerHTML = LEVEL_DATA.map(l=>{
     const isUnlocked = l.level <= unlocked;
-    const isActive = l.level === state.currentLevel;
-    const pct = levelCompletionPercent(state, l.level);
+    const isActive = l.level === activeLevel;
+    const pct = skillCompletionPercent(state, skill, l.level);
     return `<span class="level-pill ${isActive?'active':''} ${isUnlocked?'':'locked'}"
-        onclick="selectLevel(${l.level})" title="${isUnlocked ? l.desc : 'Hoàn thành 100% cả 4 kỹ năng (Từ vựng, Ngữ pháp, Nghe, Nói) của level trước để mở khoá'}">
+        onclick="selectLevel('${skill}', ${l.level})" title="${isUnlocked ? l.desc : 'Hoàn thành 100% ' + SKILL_LABEL[skill] + ' của level trước để mở khoá'}">
         ${isUnlocked ? '' : '🔒 '}${l.name}${isUnlocked ? ' · ' + pct + '%' : ''}
       </span>`;
   }).join("");
@@ -733,6 +774,11 @@ let vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng
 let vocabLastUserAnswer = ""; // lưu lại nội dung đã gõ để hiển thị so sánh sau khi input bị thay bằng feedback
 let vocabHintUsed = false; // đã bấm nút Gợi ý cho từ hiện tại chưa (reset mỗi khi sang từ mới)
 
+// Chế độ của thẻ từ hiện tại — random xen kẽ mỗi thẻ:
+//  "en2vi": hiện từ tiếng Anh, gõ nghĩa tiếng Việt (chế độ gốc)
+//  "vi2en": hiện nghĩa tiếng Việt, gõ ĐÚNG CHÍNH TẢ từ tiếng Anh (rèn chính tả)
+let vocabCardMode = "en2vi";
+
 // ----- Bài kiểm tra tổng hợp sau khi ôn xong 1 lượt từ vựng -----
 let vocabQuizWords = [];   // các từ vừa ôn trong lượt này, dùng để tạo bài kiểm tra
 let vocabQuizQueue = [];   // câu hỏi trắc nghiệm đã trộn cho lượt kiểm tra
@@ -765,13 +811,14 @@ function selectTopic(t){
 }
 
 function buildVocabQueue(){
-  let pool = VOCAB_DATA.filter(v => v.level===state.currentLevel && (currentTopic==="Tất cả" || v.topic===currentTopic));
+  let pool = VOCAB_DATA.filter(v => v.level===state.currentLevelVocab && (currentTopic==="Tất cả" || v.topic===currentTopic));
   vocabQueue = pool.filter(v=>isDue(v.id));
   if(vocabQueue.length===0) vocabQueue = pool;
   vocabQueue = shuffleArray(vocabQueue);
   vocabIdx = 0;
   vocabChecked = false;
   vocabHintUsed = false;
+  vocabCardMode = Math.random() < 0.5 ? "en2vi" : "vi2en";
   renderVocabCard();
 }
 
@@ -814,24 +861,39 @@ function renderVocabCard(){
   }
   const v = vocabQueue[vocabIdx];
   const vs = getVocabState(v.id);
+  const isVi2En = vocabCardMode === "vi2en";
   area.innerHTML = `
     <div class="flash-wrap">
       <div class="progress-bar" style="width:100%;"><div class="fill" style="width:${(vocabIdx/vocabQueue.length*100)}%"></div></div>
+      <div class="mode-badge" style="text-align:center;font-size:12px;color:var(--muted, #888);margin-bottom:4px;">
+        ${isVi2En ? "✏️ Chế độ: Gõ từ tiếng Anh" : "📝 Chế độ: Gõ nghĩa tiếng Việt"}
+      </div>
       <div class="flashcard" id="flashcardEl">
-        <div class="word">${v.word}</div>
-        <div class="phon">${v.phon}</div>
-        ${vocabChecked ? `
-          <div class="meaning">${v.meaning}</div>
-          <div class="example">"${v.example}"</div>
-        ` : (vocabHintUsed
-              ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.meaning)}</strong></div>`
-              : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`)}
+        ${isVi2En ? `
+          <div class="word">${escapeHtml(v.meaning)}</div>
+          ${vocabChecked ? `
+            <div class="meaning">${v.word}</div>
+            <div class="phon">${v.phon}</div>
+            <div class="example">"${v.example}"</div>
+          ` : (vocabHintUsed
+                ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.word)}</strong></div>`
+                : `<div class="hint">Gõ đúng chính tả từ tiếng Anh này 👇</div>`)}
+        ` : `
+          <div class="word">${v.word}</div>
+          <div class="phon">${v.phon}</div>
+          ${vocabChecked ? `
+            <div class="meaning">${v.meaning}</div>
+            <div class="example">"${v.example}"</div>
+          ` : (vocabHintUsed
+                ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.meaning)}</strong></div>`
+                : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`)}
+        `}
       </div>
       <button class="btn secondary" onclick="speak('${v.word.replace(/'/g,"\\'")}')">🔊 Nghe phát âm</button>
       ${!vocabChecked ? `
       <div class="vocab-input-row">
-        <input type="text" id="vocabAnswerInput" placeholder="Nhập nghĩa tiếng Việt..."
-          onkeydown="if(event.key==='Enter') checkVocabAnswer();" autocomplete="off">
+        <input type="text" id="vocabAnswerInput" placeholder="${isVi2En ? 'Nhập từ tiếng Anh...' : 'Nhập nghĩa tiếng Việt...'}"
+          onkeydown="if(event.key==='Enter') checkVocabAnswer();" autocomplete="off" autocapitalize="off">
         <button class="vocab-check-btn" onclick="checkVocabAnswer()">Kiểm tra</button>
       </div>
       ${!vocabHintUsed ? `<button class="small-btn" style="margin-top:8px;" onclick="useVocabHint()">💡 Gợi ý (sẽ giảm điểm thưởng nếu trả lời đúng)</button>` : ""}
@@ -1007,21 +1069,44 @@ function checkVocabAnswer(){
 
   vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng, null khi khớp tuyệt đối hoặc sai hẳn
 
-  const exactMatch = userAnswer.length>0 && answerMatchesMeaning(userAnswer, v.meaning);
-  if(exactMatch){
-    vocabWasCorrect = true;
-  } else if(userAnswer.length>0){
-    const best = bestMatchInfo(userAnswer, v.meaning);
-    if(isFuzzyAcceptable(best)){
+  if(vocabCardMode === "vi2en"){
+    // Chế độ rèn chính tả: so khớp trực tiếp với từ tiếng Anh (v.word), không
+    // cần xử lý "A/B" như nghĩa tiếng Việt vì v.word luôn là 1 từ/cụm đơn.
+    const targetWord = normalizeAnswer(v.word);
+    const exactMatch = userAnswer.length>0 && userAnswer === targetWord;
+    if(exactMatch){
       vocabWasCorrect = true;
-      vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:false};
+    } else if(userAnswer.length>0){
+      const pct = similarityPercent(userAnswer, targetWord);
+      const dist = levenshteinDistance(userAnswer, targetWord);
+      const best = {answer: targetWord, pct, dist};
+      if(isFuzzyAcceptable(best)){
+        vocabWasCorrect = true;
+        vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:false};
+      } else {
+        vocabWasCorrect = false;
+        vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:true};
+      }
     } else {
       vocabWasCorrect = false;
-      // Vẫn lưu gợi ý gần nhất để hiển thị vị trí sai, dù chưa đạt ngưỡng đúng
-      vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:true};
     }
   } else {
-    vocabWasCorrect = false;
+    const exactMatch = userAnswer.length>0 && answerMatchesMeaning(userAnswer, v.meaning);
+    if(exactMatch){
+      vocabWasCorrect = true;
+    } else if(userAnswer.length>0){
+      const best = bestMatchInfo(userAnswer, v.meaning);
+      if(isFuzzyAcceptable(best)){
+        vocabWasCorrect = true;
+        vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:false};
+      } else {
+        vocabWasCorrect = false;
+        // Vẫn lưu gợi ý gần nhất để hiển thị vị trí sai, dù chưa đạt ngưỡng đúng
+        vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:true};
+      }
+    } else {
+      vocabWasCorrect = false;
+    }
   }
   vocabChecked = true;
 
@@ -1052,6 +1137,7 @@ function nextVocabCard(){
   vocabIdx++;
   vocabChecked = false;
   vocabHintUsed = false;
+  vocabCardMode = Math.random() < 0.5 ? "en2vi" : "vi2en";
   renderVocabCard();
 }
 
@@ -1078,7 +1164,7 @@ function startVocabQuiz(){
 }
 
 function buildQuizChoices(correctWord){
-  const distractPool = VOCAB_DATA.filter(v => v.level===state.currentLevel && v.id !== correctWord.id);
+  const distractPool = VOCAB_DATA.filter(v => v.level===state.currentLevelVocab && v.id !== correctWord.id);
   const shuffledPool = shuffleArray(distractPool);
   const distractors = shuffledPool.slice(0, 3).map(v=>v.meaning);
   const choices = shuffleArray([correctWord.meaning, ...distractors]);
@@ -1174,7 +1260,7 @@ let grammarPool = [];
 
 function renderGrammarTab(){
   renderLevelPills("grammarLevelPills", "grammar");
-  const levelItems = GRAMMAR_DATA.filter(g=>g.level===state.currentLevel);
+  const levelItems = GRAMMAR_DATA.filter(g=>g.level===state.currentLevelGrammar);
   grammarPool = levelItems.filter(g=>!state.grammarDone[g.id]);
   if(grammarPool.length===0) grammarPool = levelItems.slice();
   grammarPool = shuffleArray(grammarPool);
@@ -1230,7 +1316,7 @@ function nextGrammar(id){
 function renderListenTab(){
   renderLevelPills("listenLevelPills", "listen");
   const area = document.getElementById("listenArea");
-  const items = shuffleArray(LISTEN_DATA.filter(item=>item.level===state.currentLevel));
+  const items = shuffleArray(LISTEN_DATA.filter(item=>item.level===state.currentLevelListen));
   area.innerHTML = items.map(item=>`
     <div class="card">
       <div class="row-between">
@@ -1288,7 +1374,7 @@ function renderSpeakTab(){
   }
   const area = document.getElementById("speakArea");
   const supported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  const items = shuffleArray(SPEAK_DATA.filter(item=>item.level===state.currentLevel));
+  const items = shuffleArray(SPEAK_DATA.filter(item=>item.level===state.currentLevelSpeak));
   area.innerHTML = items.map(item=>`
     <div class="card">
       <div class="row-between">
@@ -1712,7 +1798,7 @@ function selectIpaFilter(g){
 }
 
 function startRoleplay(){
-  const pool = ROLEPLAY_DATA.filter(r=>r.level===state.currentLevel);
+  const pool = ROLEPLAY_DATA.filter(r=>r.level===state.currentLevelSpeak);
   if(pool.length===0){
     document.getElementById("roleplayArea").innerHTML = `<div class="card empty-state">Chưa có tình huống roleplay cho level này.</div>`;
     return;
@@ -1894,6 +1980,7 @@ function renderGroupTab(){
 if(db.currentProfileId && db.profiles[db.currentProfileId]){
   state = db.profiles[db.currentProfileId];
   if(!state.currentLevel) state.currentLevel = 1;
+  ensurePerSkillLevels(state);
   enterApp();
 } else {
   renderProfileGate();
