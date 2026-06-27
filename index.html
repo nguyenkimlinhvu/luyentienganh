@@ -337,6 +337,13 @@
       </div>
     </div>
     <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;">🤖 Gợi ý học tập từ AI</h2>
+        <button class="btn secondary" style="padding:4px 10px;font-size:13px;" onclick="renderLearningAnalysis(true)">🔄 Phân tích lại</button>
+      </div>
+      <p class="muted" id="learningAnalysisText" style="white-space:pre-line;margin-top:8px;">Đang tính...</p>
+    </div>
+    <div class="card">
       <h2>🎯 Cột mốc thành thạo giao tiếp</h2>
       <p class="muted" id="masteryMilestoneText">Đang tính...</p>
       <div class="progress-bar"><div class="fill" id="masteryMilestoneFill" style="width:0%"></div></div>
@@ -362,6 +369,7 @@
       </div>
       <div id="vocabLevelPills"></div>
       <div id="topicPills"></div>
+      <p class="muted" id="vocabAnalysisHint" style="margin-top:8px;font-size:13px;">💡 Đang phân tích gợi ý học tập...</p>
     </div>
     <div id="vocabArea"></div>
   </section>

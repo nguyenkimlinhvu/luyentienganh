@@ -4,9 +4,10 @@
  * Worker này giữ API key Claude an toàn ở phía server (lưu trong Secret của
  * Cloudflare, KHÔNG nằm trong code), nhận request từ app PWA và trả lời lại.
  *
- * Hỗ trợ 2 chế độ:
+ * Hỗ trợ 3 chế độ:
  *  - mode: "chat"     -> chat tự do, không giới hạn chủ đề (tab Chat AI)
  *  - mode: "roleplay" -> AI đóng vai theo ngữ cảnh + chấm/sửa câu trả lời (tab Nói)
+ *  - mode: "analyze"  -> phân tích số liệu học tập (stats) và đề xuất cách học phù hợp
  *
  * Deploy: dán toàn bộ file này vào Cloudflare Workers (xem hướng dẫn kèm theo).
  */
@@ -42,6 +43,16 @@ Người học đang ở trình độ CEFR ${levelName}. Hãy:
 2. Phản hồi tự nhiên như nhân vật bạn đang đóng vai, tiếp tục hội thoại.
 3. Sau phần hội thoại, thêm một dòng riêng bắt đầu bằng "📝 Nhận xét:" để CHẤM và SỬA LỖI câu trả lời gần nhất của người học bằng tiếng Việt — chỉ ra lỗi ngữ pháp/từ vựng/phát âm (nếu có) một cách ngắn gọn, khích lệ, kèm câu đúng. Nếu câu trả lời đã tốt, khen ngợi ngắn gọn.
 Giữ câu trả lời ngắn gọn, không quá 4-5 câu cho phần hội thoại.`;
+  }
+
+  if (mode === "analyze") {
+    return `Bạn là một AI cố vấn học tiếng Anh, phân tích số liệu học tập của một người Việt đang học ở trình độ CEFR ${levelName}.
+Người dùng sẽ gửi cho bạn số liệu JSON gồm: tổng số từ đã thuộc (learnedTotal/vocabTotal), streak (số ngày học liên tiếp), số ngày hoạt động trong 14 ngày qua, tốc độ học trung bình mỗi ngày học (avgPerActiveDay), và danh sách các chủ đề từ vựng (topics) kèm % đã thuộc mỗi chủ đề, đã sắp xếp từ yếu nhất đến mạnh nhất.
+Hãy:
+1. Chỉ ra 1-2 chủ đề yếu nhất cần ưu tiên ôn lại, gọi đích danh tên chủ đề.
+2. Ghi nhận 1 chủ đề đang làm tốt (nếu có) để khích lệ.
+3. Đề xuất CỤ THỂ một thay đổi trong cách học (ví dụ: tăng/giảm số từ học mỗi ngày, ôn lại chủ đề nào trước, học đều hơn nếu streak thấp...).
+Viết bằng tiếng Việt, giọng thân thiện, khích lệ, KHÔNG quá 5 câu, không lặp lại toàn bộ số liệu thô.`;
   }
 
   // mode === "chat"
@@ -98,7 +109,7 @@ export default {
       return jsonResponse({ error: "Body request không hợp lệ (cần JSON)" }, 400);
     }
 
-    const mode = payload.mode === "roleplay" ? "roleplay" : "chat";
+    const mode = payload.mode === "roleplay" ? "roleplay" : (payload.mode === "analyze" ? "analyze" : "chat");
     const history = Array.isArray(payload.history) ? payload.history : [];
     const userMessage = (payload.message || "").toString().slice(0, 2000);
 

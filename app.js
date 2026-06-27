@@ -342,6 +342,119 @@ function countVocabLearned(profile){
   return Object.values(profile.vocab||{}).filter(v=>v.box>=5).length;
 }
 
+// ============ PHÂN TÍCH QUÁ TRÌNH HỌC (cho gợi ý AI) ============
+// Tổng hợp số liệu học từ vựng theo từng chủ đề (topic) + tốc độ học + streak,
+// dùng làm input gửi cho AI phân tích, và cũng dùng cho fallback rule-based
+// khi chưa cấu hình được Worker AI (xem renderLearningAnalysis()).
+function buildLearningStats(profile){
+  const p = profile;
+  const byTopic = {}; // topic -> {total, learned, avgBox}
+  VOCAB_DATA.forEach(v=>{
+    if(!byTopic[v.topic]) byTopic[v.topic] = {topic:v.topic, total:0, learned:0, boxSum:0};
+    const t = byTopic[v.topic];
+    t.total++;
+    const entry = p.vocab[v.id];
+    const box = entry ? entry.box : 1;
+    t.boxSum += box;
+    if(entry && entry.box>=5) t.learned++;
+  });
+  const topics = Object.values(byTopic).map(t=>({
+    topic: t.topic,
+    total: t.total,
+    learned: t.learned,
+    percent: t.total ? Math.round((t.learned/t.total)*100) : 0,
+    avgBox: t.total ? +(t.boxSum/t.total).toFixed(2) : 1
+  })).sort((a,b)=> a.percent - b.percent);
+
+  // Tốc độ học trung bình/ngày dựa trên activityLog 14 ngày gần nhất
+  let activeDays = 0, totalActivity = 0;
+  for(let i=0;i<14;i++){
+    const d = new Date(Date.now()-i*86400000).toISOString().slice(0,10);
+    const c = p.activityLog[d] || 0;
+    if(c>0){ activeDays++; totalActivity += c; }
+  }
+  const avgPerActiveDay = activeDays ? Math.round(totalActivity/activeDays) : 0;
+
+  return {
+    learnedTotal: countVocabLearned(p),
+    vocabTotal: VOCAB_DATA.length,
+    streak: p.streak || 0,
+    activeDaysLast14: activeDays,
+    avgPerActiveDay,
+    topics, // sắp xếp từ yếu nhất -> mạnh nhất
+    weakestTopics: topics.slice(0,3),
+    strongestTopics: topics.slice(-3).reverse()
+  };
+}
+
+// Fallback rule-based: dùng khi chưa cấu hình Worker AI hoặc gọi AI bị lỗi.
+// Không gọi API ngoài, chỉ suy luận từ buildLearningStats() bằng if/else.
+function fallbackLearningAnalysis(stats){
+  const lines = [];
+  const weak = stats.weakestTopics.filter(t=>t.total>0);
+  const strong = stats.strongestTopics.filter(t=>t.total>0 && t.percent>=50);
+
+  if(weak.length){
+    const w = weak[0];
+    lines.push(`📌 Chủ đề yếu nhất: "${w.topic}" (${w.learned}/${w.total} từ, ${w.percent}%). Nên ưu tiên ôn lại chủ đề này trước.`);
+  }
+  if(strong.length){
+    const s = strong[0];
+    lines.push(`💪 Chủ đề mạnh nhất: "${s.topic}" (${s.percent}%). Bạn đang làm tốt, có thể giảm thời gian ôn chủ đề này.`);
+  }
+  if(stats.avgPerActiveDay > 0){
+    if(stats.avgPerActiveDay < 5){
+      lines.push(`🐢 Tốc độ học hiện tại khá chậm (~${stats.avgPerActiveDay} hoạt động/ngày học). Thử tăng dần để đạt mốc tiếp theo nhanh hơn.`);
+    } else if(stats.avgPerActiveDay > 30){
+      lines.push(`⚡ Bạn học khá nhanh (~${stats.avgPerActiveDay} hoạt động/ngày học). Nhớ ôn lại đều để nhớ lâu, đừng chỉ học từ mới.`);
+    } else {
+      lines.push(`✅ Tốc độ học ổn định (~${stats.avgPerActiveDay} hoạt động/ngày học). Cứ giữ nhịp này.`);
+    }
+  } else {
+    lines.push(`📅 Chưa có hoạt động học trong 14 ngày qua. Hãy bắt đầu học lại để AI có dữ liệu phân tích chính xác hơn.`);
+  }
+  if(stats.streak>=3){
+    lines.push(`🔥 Streak ${stats.streak} ngày — duy trì rất tốt!`);
+  }
+  return lines.join("\n");
+}
+
+let lastLearningAnalysisText = ""; // cache để tab Từ vựng dùng lại, không gọi AI 2 lần
+let learningAnalysisBusy = false;
+
+async function renderLearningAnalysis(forceRefresh){
+  const textEl = document.getElementById("learningAnalysisText");
+  const vocabHintEl = document.getElementById("vocabAnalysisHint");
+  if(!textEl && !vocabHintEl) return;
+
+  if(!forceRefresh && lastLearningAnalysisText){
+    if(textEl) textEl.textContent = lastLearningAnalysisText;
+    if(vocabHintEl) vocabHintEl.textContent = "💡 " + lastLearningAnalysisText.split("\n")[0].replace(/^📌\s*/,"");
+    return;
+  }
+
+  const stats = buildLearningStats(state);
+
+  if(textEl) textEl.textContent = "🤖 Đang phân tích quá trình học...";
+  if(learningAnalysisBusy) return;
+  learningAnalysisBusy = true;
+
+  let result;
+  try{
+    if(!getAiWorkerUrl()) throw new Error("CHƯA_CẤU_HÌNH");
+    const prompt = "Đây là số liệu học tập của tôi (JSON): " + JSON.stringify(stats) +
+      "\nHãy phân tích điểm mạnh/điểm yếu theo chủ đề và đề xuất cách học hiệu quả hơn, viết ngắn gọn bằng tiếng Việt (tối đa 5 câu).";
+    result = await callAiWorker("analyze", {stats}, prompt, []);
+  }catch(e){
+    result = fallbackLearningAnalysis(stats);
+  }
+  learningAnalysisBusy = false;
+
+  lastLearningAnalysisText = result;
+  if(textEl) textEl.textContent = result;
+  if(vocabHintEl) vocabHintEl.textContent = "💡 " + result.split("\n")[0].replace(/^📌\s*/,"");
+}
+
 // ============ CỘT MỐC THÀNH THẠO GIAO TIẾP (theo số từ đã thuộc) ============
 // Các mốc tham khảo phổ biến trong nghiên cứu học ngôn ngữ: ~250 từ đủ cho
 // giao tiếp những nhu cầu cơ bản nhất, ~500 từ giao tiếp tự tin hơn trong đời
@@ -797,6 +910,7 @@ function renderHomeStats(){
 
   renderMasteryMilestones();
   renderBadgesPreview();
+  renderLearningAnalysis(false);
 }
 
 function renderBadgesPreview(){
@@ -881,6 +995,7 @@ function renderVocabTab(){
   renderLevelPills("vocabLevelPills", "vocab");
   renderTopicPills();
   buildVocabQueue();
+  renderLearningAnalysis(false);
 }
 
 // Chuẩn hoá chuỗi để so khớp linh hoạt: bỏ hoa/thường, dấu câu, khoảng trắng thừa
