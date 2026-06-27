@@ -1205,7 +1205,18 @@ function answerVocabQuiz(choiceIdx, wordId){
   const chosenMeaning = choices[choiceIdx];
   const correct = chosenMeaning === v.meaning;
 
-  if(correct) vocabQuizScore++;
+  if(correct){
+    vocabQuizScore++;
+    // Trả lời đúng trong bài kiểm tra cũng tính là 1 lần nhớ đúng, tăng box
+    // Leitner của từ này — để % hoàn thành level phản ánh đúng việc đã ôn
+    // qua bài kiểm tra, không chỉ riêng lúc gõ nghĩa ở thẻ từ.
+    const vs = getVocabState(v.id);
+    vs.box = Math.min(5, vs.box+1);
+    const intervalDays = [1,2,4,7,14][vs.box-1] || 14;
+    const due = new Date(Date.now() + intervalDays*86400000);
+    vs.due = due.toISOString().slice(0,10);
+    if(vs.box>=5) vs.learned = true;
+  }
 
   const buttons = document.querySelectorAll("#vocabQuizOpts .opt-btn");
   buttons.forEach((b,i)=>{
