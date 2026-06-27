@@ -100,6 +100,25 @@
   .rate-again{background:var(--bad);}
   .rate-hard{background:var(--warn);}
   .rate-good{background:var(--good);}
+  .vocab-input-row{display:flex;gap:8px;width:100%;}
+  .vocab-input-row input{
+    flex:1;border:2px solid #e1e4f0;border-radius:12px;
+    padding:12px 14px;font-size:16px;color:var(--text);
+    background:var(--card);
+  }
+  .vocab-input-row input.wrong{border-color:var(--bad);}
+  .vocab-input-row input.correct{border-color:var(--good);}
+  .vocab-check-btn{
+    background:var(--primary);color:#fff;border:none;border-radius:12px;
+    padding:12px 18px;font-size:14px;font-weight:600;
+  }
+  .vocab-feedback{font-size:14px;font-weight:600;margin-top:4px;width:100%;text-align:center;}
+  .vocab-feedback.correct{color:var(--good);}
+  .vocab-feedback.wrong{color:var(--bad);}
+  .vocab-next-btn{
+    background:var(--primary);color:#fff;border:none;border-radius:12px;
+    padding:12px 18px;font-size:14px;font-weight:600;width:100%;
+  }
   .progress-bar{height:6px;background:#e8e8ee;border-radius:6px;overflow:hidden;margin-bottom:10px;}
   .progress-bar .fill{height:100%;background:var(--primary);transition:width .3s;}
   .btn{
@@ -200,6 +219,22 @@
   .rank-avatar{font-size:20px;}
   .rank-name{flex:1;font-weight:600;font-size:14px;}
   .rank-points{font-weight:700;color:var(--primary-dark);font-size:13px;}
+
+  /* AI Chat & Roleplay */
+  .chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 280px);min-height:320px;}
+  .chat-history{flex:1;overflow-y:auto;padding:6px 2px;display:flex;flex-direction:column;gap:10px;}
+  .chat-bubble{max-width:85%;padding:10px 14px;border-radius:16px;font-size:14px;line-height:1.45;white-space:pre-wrap;}
+  .chat-bubble.user{align-self:flex-end;background:var(--primary);color:#fff;border-bottom-right-radius:4px;}
+  .chat-bubble.ai{align-self:flex-start;background:#f0f1f6;color:var(--text);border-bottom-left-radius:4px;}
+  .chat-bubble.note{align-self:center;background:#fff7e0;color:#8a6400;font-size:12px;border:1px solid #f0d999;}
+  .chat-input-row{display:flex;gap:8px;margin-top:10px;}
+  .chat-input-row input{flex:1;}
+  .chat-input-row button{width:auto;padding:12px 16px;flex-shrink:0;}
+  .ai-setup-note{font-size:12px;color:var(--muted);background:#f6f7fb;border-radius:10px;padding:10px;margin-top:8px;}
+  .role-card{background:#eef0fa;border-radius:14px;padding:12px;margin-bottom:12px;}
+  .role-card .role-title{font-weight:700;font-size:14px;color:var(--primary-dark);}
+  .role-card .role-scenario{font-size:13px;color:var(--text);margin-top:4px;}
+  .typing-dots{display:inline-block;}
 </style>
 </head>
 <body>
@@ -271,6 +306,13 @@
         <div class="sub">Bảng xếp hạng, mục tiêu chung, huy hiệu</div>
       </div>
     </div>
+    <div class="card home-tile" onclick="goTab('aichat')">
+      <div class="emoji">🤖</div>
+      <div>
+        <div class="title">Chat AI</div>
+        <div class="sub">Trò chuyện tự do bằng tiếng Anh với AI</div>
+      </div>
+    </div>
     <div class="card">
       <h2>Tiến độ tuần này</h2>
       <div class="progress-bar"><div class="fill" id="weekFill" style="width:0%"></div></div>
@@ -318,16 +360,39 @@
   <!-- SPEAK -->
   <section class="screen" id="screen-speak">
     <div class="card">
-      <h2>Luyện nói & phát âm</h2>
-      <p class="muted">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
+      <div class="row-between">
+        <h2 style="margin:0;">Luyện nói & phát âm</h2>
+        <button class="small-btn" onclick="toggleSpeakMode()" id="speakModeBtn">🎭 Chế độ AI đóng vai</button>
+      </div>
+      <p class="muted" id="speakModeHint">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
       <div id="speakLevelPills"></div>
     </div>
     <div id="speakArea"></div>
+    <div id="roleplayArea" style="display:none;"></div>
   </section>
 
   <!-- GROUP -->
   <section class="screen" id="screen-group">
     <div id="groupArea"></div>
+  </section>
+
+  <!-- AI CHAT -->
+  <section class="screen" id="screen-aichat">
+    <div class="card">
+      <h2>🤖 Chat AI luyện hội thoại</h2>
+      <p class="muted">Trò chuyện tự do bằng tiếng Anh. AI sẽ trả lời và gợi ý sửa lỗi nếu cần.</p>
+      <div id="aiChatSetupNote"></div>
+    </div>
+    <div class="card">
+      <div class="chat-wrap">
+        <div class="chat-history" id="aiChatHistory"></div>
+        <div class="chat-input-row">
+          <input type="text" id="aiChatInput" placeholder="Type in English..." onkeydown="if(event.key==='Enter')sendAiChat()">
+          <button class="btn" onclick="sendAiChat()">Gửi</button>
+        </div>
+      </div>
+      <button class="small-btn" style="margin-top:10px;" onclick="resetAiChat()">Bắt đầu hội thoại mới</button>
+    </div>
   </section>
 
 </main>
@@ -341,6 +406,7 @@
   <button data-tab="listen" onclick="goTab('listen')"><span class="ic">🎧</span>Nghe</button>
   <button data-tab="speak" onclick="goTab('speak')"><span class="ic">🎙️</span>Nói</button>
   <button data-tab="group" onclick="goTab('group')"><span class="ic">👥</span>Nhóm</button>
+  <button data-tab="aichat" onclick="goTab('aichat')"><span class="ic">🤖</span>Chat AI</button>
 </nav>
 
 <script src="data.js"></script>
