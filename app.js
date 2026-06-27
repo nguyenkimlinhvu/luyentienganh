@@ -65,6 +65,46 @@ if(typeof document !== "undefined"){
 // ============ STORAGE: NHIỀU HỒ SƠ ============
 const STORE_KEY = "ehoc_profiles_v2";
 const OLD_STORE_KEY = "ehoc_state_v1"; // dữ liệu phiên bản cũ (1 người dùng)
+const BACKUP_KEY = "ehoc_profiles_v2_backup"; // bản sao dự phòng, tự cập nhật ngầm mỗi khi lưu dữ liệu
+
+// Tự động khôi phục dữ liệu từ bản sao dự phòng nếu dữ liệu chính bị mất/hỏng
+// (vd: do trình duyệt xoá cache nhầm, lỗi cập nhật phiên bản app...). Hàm này
+// chạy ngầm, không cần người dùng làm gì — chỉ can thiệp khi phát hiện dữ
+// liệu chính trống/lỗi NHƯNG bản dự phòng vẫn còn dữ liệu hợp lệ.
+function restoreFromBackupIfNeeded(){
+  try{
+    const main = localStorage.getItem(STORE_KEY);
+    const backup = localStorage.getItem(BACKUP_KEY);
+    if(!backup) return;
+
+    let mainIsEmpty = true;
+    if(main){
+      const parsed = JSON.parse(main);
+      mainIsEmpty = !parsed || !parsed.profiles || Object.keys(parsed.profiles).length === 0;
+    }
+
+    if(mainIsEmpty){
+      const backupParsed = JSON.parse(backup);
+      if(backupParsed && backupParsed.profiles && Object.keys(backupParsed.profiles).length > 0){
+        localStorage.setItem(STORE_KEY, backup);
+        showToastSafe("🛟 Đã tự khôi phục dữ liệu học từ bản sao dự phòng.");
+      }
+    }
+  }catch(e){
+    // Nếu backup cũng hỏng thì bỏ qua, để luồng loadDB() bình thường xử lý tiếp
+  }
+}
+
+// Gọi showToast an toàn — tại thời điểm này UI có thể chưa render xong
+function showToastSafe(msg){
+  try{ if(typeof showToast === "function") showToast(msg); }catch(e){}
+}
+
+function backupDB(){
+  try{
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(db));
+  }catch(e){}
+}
 
 function emptyProfileState(name, avatar){
   return {
@@ -107,10 +147,13 @@ function loadDB(){
   return db;
 }
 
+restoreFromBackupIfNeeded();
 let db = loadDB();
+backupDB(); // lưu ngay 1 bản dự phòng đầu phiên, phòng trường hợp dữ liệu chính bị mất giữa phiên dùng
 
 function saveDB(){
   localStorage.setItem(STORE_KEY, JSON.stringify(db));
+  backupDB();
 }
 
 function getProfile(){
