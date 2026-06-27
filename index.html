@@ -122,6 +122,13 @@
     cursor:pointer;font-weight:600;
   }
   .topic-pill.active{background:var(--primary);color:#fff;}
+  .level-pill{
+    display:inline-block;background:#eef0fa;color:var(--primary-dark);
+    font-size:12px;padding:5px 12px;border-radius:20px;margin:2px 4px 8px 0;
+    cursor:pointer;font-weight:600;
+  }
+  .level-pill.active{background:var(--primary);color:#fff;}
+  .level-pill.locked{background:#f0f1f6;color:var(--muted);cursor:not-allowed;}
   .listen-text{font-size:15px;line-height:1.6;background:#f6f7fb;border-radius:12px;padding:14px;margin:10px 0;}
   .listen-text.blurred{filter:blur(5px);user-select:none;}
   .mic-btn{
@@ -149,24 +156,82 @@
     font-size:13px;z-index:100;opacity:0;transition:opacity .25s;pointer-events:none;
   }
   .toast.show{opacity:1;}
+
+  /* Profile gate */
+  .profile-row{
+    display:flex;align-items:center;gap:12px;background:#f6f7fb;
+    border-radius:14px;padding:12px;margin-bottom:10px;cursor:pointer;
+  }
+  .avatar-circle{
+    width:46px;height:46px;border-radius:50%;background:#eef0fa;
+    display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0;
+  }
+  .profile-info{flex:1;}
+  .profile-name{font-weight:700;font-size:15px;}
+  .avatar-grid{display:flex;flex-wrap:wrap;gap:8px;}
+  .avatar-pick{
+    font-size:24px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;
+    background:#f6f7fb;border-radius:12px;cursor:pointer;border:2px solid transparent;
+  }
+  .avatar-pick.selected{border-color:var(--primary);background:#eef0fa;}
+
+  /* Badges */
+  .badge-chip{
+    display:inline-block;background:#fff7e0;color:#8a6400;border:1px solid #f0d999;
+    font-size:12px;padding:5px 10px;border-radius:20px;margin:3px 4px 3px 0;font-weight:600;
+  }
+  .badge-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;}
+  .badge-card{
+    background:#f6f7fb;border-radius:12px;padding:10px;text-align:center;opacity:.55;
+  }
+  .badge-card.earned{opacity:1;background:#fff7e0;border:1px solid #f0d999;}
+  .badge-icon{font-size:26px;}
+  .badge-name{font-weight:700;font-size:13px;margin-top:4px;}
+  .badge-desc{font-size:11px;color:var(--muted);margin-top:2px;}
+  .badge-status{font-size:11px;font-weight:600;color:var(--primary-dark);margin-top:4px;}
+
+  /* Leaderboard */
+  .rank-row{
+    display:flex;align-items:center;gap:10px;padding:10px 4px;
+    border-bottom:1px solid #f0f1f6;
+  }
+  .rank-row.me{background:#eef0fa;border-radius:10px;}
+  .rank-medal{font-size:18px;width:24px;text-align:center;}
+  .rank-avatar{font-size:20px;}
+  .rank-name{flex:1;font-weight:600;font-size:14px;}
+  .rank-points{font-weight:700;color:var(--primary-dark);font-size:13px;}
 </style>
 </head>
 <body>
 
-<header>
-  <h1 id="greeting">Chào bạn 👋</h1>
-  <p id="todayStr"></p>
+<header id="mainHeader" style="display:none;">
+  <div class="row-between" style="align-items:flex-start;">
+    <div>
+      <h1 id="greeting">Chào bạn 👋</h1>
+      <p id="todayStr"></p>
+    </div>
+    <button class="small-btn" onclick="switchProfileFromHeader()" style="background:rgba(255,255,255,.2);color:#fff;white-space:nowrap;">
+      <span id="profileNameDisplay"></span> · Đổi hồ sơ
+    </button>
+  </div>
   <div class="stats-row">
     <div class="stat"><div class="num" id="streakNum">0</div><div class="label">🔥 ngày liên tiếp</div></div>
     <div class="stat"><div class="num" id="dueNum">0</div><div class="label">từ cần ôn</div></div>
     <div class="stat"><div class="num" id="learnedNum">0</div><div class="label">đã học</div></div>
+    <div class="stat"><div class="num" id="pointsNum">0</div><div class="label">⭐ điểm</div></div>
+    <div class="stat"><div class="num" id="levelNum">1</div><div class="label">level</div></div>
   </div>
 </header>
 
-<main>
+<!-- PROFILE GATE -->
+<section class="screen active" id="screen-profileGate" style="padding:14px;max-width:520px;margin:0 auto;">
+  <div id="profileGateArea"></div>
+</section>
+
+<main id="mainAppArea" style="display:none;">
 
   <!-- HOME -->
-  <section class="screen active" id="screen-home">
+  <section class="screen" id="screen-home">
     <div class="card home-tile" onclick="goTab('vocab')">
       <div class="emoji">🗂️</div>
       <div>
@@ -199,10 +264,21 @@
       </div>
       <div class="badge" id="homeSpeakBadge">0</div>
     </div>
+    <div class="card home-tile" onclick="goTab('group')">
+      <div class="emoji">👥</div>
+      <div>
+        <div class="title">Nhóm học tập</div>
+        <div class="sub">Bảng xếp hạng, mục tiêu chung, huy hiệu</div>
+      </div>
+    </div>
     <div class="card">
       <h2>Tiến độ tuần này</h2>
       <div class="progress-bar"><div class="fill" id="weekFill" style="width:0%"></div></div>
       <p class="muted" id="weekText">Chưa có hoạt động nào.</p>
+    </div>
+    <div class="card">
+      <h2>Huy hiệu của bạn</h2>
+      <div id="badgesPreview"></div>
     </div>
   </section>
 
@@ -213,6 +289,7 @@
         <h2 style="margin:0;">Từ vựng hôm nay</h2>
         <button class="small-btn" onclick="resetVocabProgress()">Đặt lại</button>
       </div>
+      <div id="vocabLevelPills"></div>
       <div id="topicPills"></div>
     </div>
     <div id="vocabArea"></div>
@@ -223,6 +300,7 @@
     <div class="card">
       <h2>Ngữ pháp & câu mẫu</h2>
       <p class="muted">Chọn đáp án đúng cho mỗi câu.</p>
+      <div id="grammarLevelPills"></div>
     </div>
     <div id="grammarArea"></div>
   </section>
@@ -232,6 +310,7 @@
     <div class="card">
       <h2>Luyện nghe</h2>
       <p class="muted">Nhấn 🔊 để nghe, đoán từ còn thiếu rồi bấm hiện đáp án.</p>
+      <div id="listenLevelPills"></div>
     </div>
     <div id="listenArea"></div>
   </section>
@@ -241,20 +320,27 @@
     <div class="card">
       <h2>Luyện nói & phát âm</h2>
       <p class="muted">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
+      <div id="speakLevelPills"></div>
     </div>
     <div id="speakArea"></div>
+  </section>
+
+  <!-- GROUP -->
+  <section class="screen" id="screen-group">
+    <div id="groupArea"></div>
   </section>
 
 </main>
 
 <div class="toast" id="toast"></div>
 
-<nav class="tabbar">
-  <button data-tab="home" onclick="goTab('home')"><span class="ic">🏠</span>Trang chính</button>
+<nav class="tabbar" style="display:none;">
+  <button data-tab="home" onclick="goTab('home')"><span class="ic">🏠</span>Chính</button>
   <button data-tab="vocab" onclick="goTab('vocab')"><span class="ic">🗂️</span>Từ vựng</button>
   <button data-tab="grammar" onclick="goTab('grammar')"><span class="ic">📘</span>Ngữ pháp</button>
   <button data-tab="listen" onclick="goTab('listen')"><span class="ic">🎧</span>Nghe</button>
   <button data-tab="speak" onclick="goTab('speak')"><span class="ic">🎙️</span>Nói</button>
+  <button data-tab="group" onclick="goTab('group')"><span class="ic">👥</span>Nhóm</button>
 </nav>
 
 <script src="data.js"></script>
