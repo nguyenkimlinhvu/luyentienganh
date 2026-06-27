@@ -1,3 +1,15 @@
+// ============ TIỆN ÍCH: TRỘN THỨ TỰ NGẪU NHIÊN ============
+// Dùng thuật toán Fisher-Yates để xáo trộn thứ tự bài học mỗi lần vào tab/mở
+// lại app, giúp người học không bị quen thứ tự cố định mà phải nhớ lan man.
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // ============ XỬ LÝ BÀN PHÍM ẢO TRÊN ĐIỆN THOẠI ============
 // Khi bàn phím ảo mở, trình duyệt thu nhỏ khung nhìn (visualViewport) nhưng
 // thanh tabbar (position:fixed) và phần nội dung phía dưới ô nhập vẫn có thể
@@ -589,6 +601,7 @@ function buildVocabQueue(){
   let pool = VOCAB_DATA.filter(v => v.level===state.currentLevel && (currentTopic==="Tất cả" || v.topic===currentTopic));
   vocabQueue = pool.filter(v=>isDue(v.id));
   if(vocabQueue.length===0) vocabQueue = pool;
+  vocabQueue = shuffleArray(vocabQueue);
   vocabIdx = 0;
   vocabChecked = false;
   renderVocabCard();
@@ -876,6 +889,7 @@ function renderGrammarTab(){
   const levelItems = GRAMMAR_DATA.filter(g=>g.level===state.currentLevel);
   grammarPool = levelItems.filter(g=>!state.grammarDone[g.id]);
   if(grammarPool.length===0) grammarPool = levelItems.slice();
+  grammarPool = shuffleArray(grammarPool);
   grammarIdx = 0;
   renderGrammarQuestion();
 }
@@ -928,7 +942,7 @@ function nextGrammar(id){
 function renderListenTab(){
   renderLevelPills("listenLevelPills", "listen");
   const area = document.getElementById("listenArea");
-  const items = LISTEN_DATA.filter(item=>item.level===state.currentLevel);
+  const items = shuffleArray(LISTEN_DATA.filter(item=>item.level===state.currentLevel));
   area.innerHTML = items.map(item=>`
     <div class="card">
       <div class="row-between">
@@ -986,7 +1000,7 @@ function renderSpeakTab(){
   }
   const area = document.getElementById("speakArea");
   const supported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  const items = SPEAK_DATA.filter(item=>item.level===state.currentLevel);
+  const items = shuffleArray(SPEAK_DATA.filter(item=>item.level===state.currentLevel));
   area.innerHTML = items.map(item=>`
     <div class="card">
       <div class="row-between">
