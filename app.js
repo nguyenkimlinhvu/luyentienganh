@@ -388,7 +388,7 @@ function renderHomeStats(){
   const levelEl = document.getElementById("levelNum");
   if(levelEl){
     const lvl = LEVEL_DATA.find(l=>l.level===(p.currentLevel||1));
-    levelEl.textContent = lvl ? lvl.name.replace("Cấp ","") : (p.currentLevel||1);
+    levelEl.textContent = lvl ? lvl.name.split(" — ")[0] : (p.currentLevel||1);
   }
 
   document.getElementById("homeVocabBadge").textContent = due;
