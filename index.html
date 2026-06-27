@@ -400,6 +400,14 @@
   <!-- GROUP -->
   <section class="screen" id="screen-group">
     <div id="groupArea"></div>
+    <div class="card">
+      <h2>💾 Sao lưu & khôi phục dữ liệu</h2>
+      <p class="muted">Lưu một bản sao toàn bộ dữ liệu học (mọi hồ sơ, điểm, tiến độ) ra file, để dùng lại khi đổi máy, đổi trình duyệt, hoặc lỡ xoá dữ liệu trang web.</p>
+      <button class="btn secondary" style="margin-top:10px;" onclick="exportBackupFile()">⬇️ Tải file sao lưu (.json)</button>
+      <button class="btn secondary" style="margin-top:8px;" onclick="document.getElementById('restoreFileInput').click()">⬆️ Khôi phục từ file sao lưu</button>
+      <input type="file" id="restoreFileInput" accept="application/json,.json" style="display:none;" onchange="importBackupFile(event)">
+      <p class="muted" style="margin-top:10px;font-size:13px;">⚠️ Khôi phục sẽ thay thế toàn bộ dữ liệu hiện tại trên máy này bằng dữ liệu trong file.</p>
+    </div>
   </section>
 
   <!-- AI CHAT -->

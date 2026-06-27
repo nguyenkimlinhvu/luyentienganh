@@ -160,6 +160,93 @@ function getProfile(){
   return db.profiles[db.currentProfileId];
 }
 
+// ----- SAO LƯU / KHÔI PHỤC RA FILE (.json) -----
+// Khác với backupDB() (bản sao ngầm trong cùng localStorage, chỉ chống mất
+// dữ liệu do lỗi tạm trên CÙNG máy/trình duyệt), tính năng này xuất dữ liệu
+// ra một file thật để người dùng tự lưu ở nơi khác (Drive, email, USB...),
+// nhờ đó khôi phục được cả khi đổi máy, đổi trình duyệt, hoặc xoá hết dữ
+// liệu trang web.
+function exportBackupFile(){
+  try{
+    const payload = {
+      app: "ehoc_backup",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      db: db
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `ehoc-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 1000);
+    showToastSafe("✅ Đã tải file sao lưu. Hãy lưu file này ở nơi an toàn (Drive, email...).");
+  }catch(e){
+    showToastSafe("❌ Không thể tạo file sao lưu: " + e.message);
+  }
+}
+
+function importBackupFile(evt){
+  const input = evt && evt.target ? evt.target : document.getElementById("restoreFileInput");
+  const file = input && input.files && input.files[0];
+  if(!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(){
+    try{
+      const parsed = JSON.parse(reader.result);
+      // Hỗ trợ cả file mới (có bọc {app, version, db}) và trường hợp người
+      // dùng vô tình đưa thẳng nội dung db (không có bọc ngoài).
+      const incomingDb = (parsed && parsed.db && parsed.db.profiles) ? parsed.db : parsed;
+
+      if(!incomingDb || typeof incomingDb !== "object" || !incomingDb.profiles){
+        showToastSafe("❌ File không hợp lệ — không tìm thấy dữ liệu hồ sơ.");
+        return;
+      }
+
+      const profileCount = Object.keys(incomingDb.profiles).length;
+      const ok = confirm(
+        `Khôi phục sẽ THAY THẾ toàn bộ dữ liệu hiện tại trên máy này bằng dữ liệu trong file (${profileCount} hồ sơ). Bạn chắc chắn muốn tiếp tục?`
+      );
+      if(!ok){ input.value=""; return; }
+
+      db = incomingDb;
+      if(!db.currentProfileId || !db.profiles[db.currentProfileId]){
+        db.currentProfileId = Object.keys(db.profiles)[0] || null;
+      }
+      saveDB();
+
+      if(db.currentProfileId && db.profiles[db.currentProfileId]){
+        state = db.profiles[db.currentProfileId];
+        if(!state.currentLevel) state.currentLevel = 1;
+      } else {
+        state = null;
+      }
+
+      showToastSafe("✅ Đã khôi phục dữ liệu thành công!");
+      input.value = "";
+
+      // Vẽ lại toàn bộ UI từ trạng thái mới
+      if(state){
+        if(typeof enterApp === "function") enterApp();
+      } else if(typeof renderProfileGate === "function"){
+        renderProfileGate();
+      }
+    }catch(e){
+      showToastSafe("❌ File sao lưu bị lỗi hoặc không đúng định dạng.");
+    }
+  };
+  reader.onerror = function(){
+    showToastSafe("❌ Không đọc được file đã chọn.");
+  };
+  reader.readAsText(file);
+}
+
 let state = null; // hồ sơ đang hoạt động (alias để code cũ chạy được)
 
 function setActiveProfile(id){
