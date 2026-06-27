@@ -342,6 +342,51 @@ function countVocabLearned(profile){
   return Object.values(profile.vocab||{}).filter(v=>v.box>=5).length;
 }
 
+// ============ CỘT MỐC THÀNH THẠO GIAO TIẾP (theo số từ đã thuộc) ============
+// Các mốc tham khảo phổ biến trong nghiên cứu học ngôn ngữ: ~250 từ đủ cho
+// giao tiếp những nhu cầu cơ bản nhất, ~500 từ giao tiếp tự tin hơn trong đời
+// sống hàng ngày, ~1000 từ được xem là mốc "giao tiếp thành thạo" cho hầu hết
+// tình huống thường gặp, ~2000 từ tiến gần tới mức đọc hiểu/giao tiếp tự nhiên.
+const MASTERY_MILESTONES = [
+  {count:250,  label:"Giao tiếp cơ bản",   desc:"Đủ vốn từ cho các câu giao tiếp đơn giản hàng ngày."},
+  {count:500,  label:"Giao tiếp tự tin",   desc:"Diễn đạt được nhiều tình huống quen thuộc một cách tự nhiên hơn."},
+  {count:1000, label:"Giao tiếp thành thạo", desc:"Mốc được xem là đủ để giao tiếp thành thạo trong đời sống hàng ngày."},
+  {count:2000, label:"Gần như người bản xứ", desc:"Vốn từ rộng, hiểu và diễn đạt linh hoạt trong hầu hết tình huống."}
+];
+
+function renderMasteryMilestones(){
+  const textEl = document.getElementById("masteryMilestoneText");
+  const fillEl = document.getElementById("masteryMilestoneFill");
+  const listEl = document.getElementById("masteryMilestoneList");
+  if(!textEl || !fillEl || !listEl) return;
+
+  const learned = countVocabLearned(state);
+  const next = MASTERY_MILESTONES.find(m => learned < m.count);
+
+  if(!next){
+    const last = MASTERY_MILESTONES[MASTERY_MILESTONES.length-1];
+    textEl.textContent = `🏆 Bạn đã học ${learned} từ — vượt mốc "${last.label}" (${last.count} từ)!`;
+    fillEl.style.width = "100%";
+  } else {
+    const prev = MASTERY_MILESTONES.slice().reverse().find(m => learned >= m.count);
+    const base = prev ? prev.count : 0;
+    const pct = Math.round(((learned - base) / (next.count - base)) * 100);
+    textEl.textContent = `Đã học ${learned}/${next.count} từ để đạt mốc "${next.label}"`;
+    fillEl.style.width = Math.max(0, Math.min(100, pct)) + "%";
+  }
+
+  listEl.innerHTML = MASTERY_MILESTONES.map(m=>{
+    const reached = learned >= m.count;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border,#eee);">
+        <div>
+          <div style="font-weight:600;">${reached ? "✅" : "⬜"} ${m.label} <span class="muted" style="font-weight:400;">(${m.count} từ)</span></div>
+          <div class="muted" style="font-size:13px;">${m.desc}</div>
+        </div>
+        <div style="white-space:nowrap;font-weight:600;color:${reached ? 'var(--good,#2e7d32)' : 'var(--muted,#888)'};">${Math.min(learned, m.count)}/${m.count}</div>
+      </div>`;
+  }).join("");
+}
+
 // ============ LEVEL: MỞ KHOÁ NỘI DUNG ============
 // % hoàn thành của 1 level = trung bình % hoàn thành của 4 kỹ năng trong level đó
 function levelCompletionPercent(profile, level){
@@ -750,6 +795,7 @@ function renderHomeStats(){
   document.getElementById("weekText").textContent =
     activeDays===0 ? "Chưa có hoạt động nào." : `Bạn đã học ${activeDays}/7 ngày trong tuần này.`;
 
+  renderMasteryMilestones();
   renderBadgesPreview();
 }
 
