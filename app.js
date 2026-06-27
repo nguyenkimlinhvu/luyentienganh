@@ -1051,6 +1051,87 @@ async function callAiWorker(mode, extra, message, history){
   return data.reply;
 }
 
+// ============ NHẬP BẰNG GIỌNG NÓI CHO CHAT AI / ROLEPLAY ============
+// Dùng lại Web Speech API (getRecognizer()) đã có cho phần luyện nói —
+// chỉ khác là kết quả được điền vào ô input chat thay vì chấm điểm phát âm.
+let chatRecognizer = null;
+let chatRecordingInputId = null;
+
+function toggleChatVoiceInput(inputId, btnId){
+  if(chatRecordingInputId === inputId){
+    if(chatRecognizer) chatRecognizer.stop();
+    return;
+  }
+  if(chatRecognizer){ try{ chatRecognizer.stop(); }catch(e){} }
+
+  const btn = document.getElementById(btnId);
+  const status = document.getElementById(inputId === "aiChatInput" ? "aiChatMicStatus" : "roleplayMicStatus");
+
+  chatRecognizer = getRecognizer();
+  if(!chatRecognizer){
+    if(status) status.textContent = "⚠️ Trình duyệt này không hỗ trợ nhận diện giọng nói (vd: Safari trên iPhone). Hãy gõ chữ thay vào đó.";
+    showToast("Không hỗ trợ nhận diện giọng nói trên thiết bị này.");
+    return;
+  }
+
+  chatRecordingInputId = inputId;
+  if(btn) btn.classList.add("recording");
+  if(status) status.textContent = "🎙️ Đang nghe... hãy nói câu của bạn.";
+
+  chatRecognizer.onresult = (e)=>{
+    const said = e.results[0][0].transcript;
+    const input = document.getElementById(inputId);
+    if(input) input.value = said;
+    if(status) status.textContent = "✅ Đã nhận: \"" + said + "\" — bấm Gửi hoặc sửa lại nếu cần.";
+  };
+  chatRecognizer.onerror = (e)=>{
+    let msg = "Không nghe rõ, hãy thử lại.";
+    if(e.error === "not-allowed" || e.error === "service-not-allowed"){
+      msg = "⚠️ Chưa được cấp quyền micro. Vào Cài đặt > Safari (hoặc Cài đặt trang web) để cho phép Microphone, rồi tải lại trang.";
+    } else if(e.error === "no-speech"){
+      msg = "Không nghe thấy gì, hãy thử nói to và rõ hơn.";
+    } else if(e.error === "audio-capture"){
+      msg = "⚠️ Không tìm thấy micro trên thiết bị này.";
+    } else if(e.error === "network"){
+      msg = "⚠️ Lỗi kết nối mạng khi nhận diện giọng nói, hãy thử lại.";
+    }
+    if(status) status.textContent = msg;
+    if(btn) btn.classList.remove("recording");
+    chatRecordingInputId = null;
+  };
+  chatRecognizer.onend = ()=>{
+    if(btn) btn.classList.remove("recording");
+    chatRecordingInputId = null;
+  };
+
+  try{
+    chatRecognizer.start();
+  }catch(e){
+    if(status) status.textContent = "⚠️ Không thể bắt đầu ghi âm, hãy thử lại.";
+    if(btn) btn.classList.remove("recording");
+    chatRecordingInputId = null;
+  }
+}
+
+// Tự đọc to câu trả lời của AI (tuỳ chọn, lưu trạng thái bật/tắt theo từng hồ sơ trình duyệt)
+let autoSpeakAiChat = localStorage.getItem("ehoc_autospeak_aichat") === "1";
+let autoSpeakRoleplay = localStorage.getItem("ehoc_autospeak_roleplay") === "1";
+
+function setAutoSpeakAiChat(checked){
+  autoSpeakAiChat = checked;
+  localStorage.setItem("ehoc_autospeak_aichat", checked ? "1" : "0");
+}
+function setAutoSpeakRoleplay(checked){
+  autoSpeakRoleplay = checked;
+  localStorage.setItem("ehoc_autospeak_roleplay", checked ? "1" : "0");
+}
+
+// Đọc to câu trả lời của AI, bỏ phần "📝 Nhận xét:"/"📝 Gợi ý:" (tiếng Việt) — chỉ đọc phần tiếng Anh
+function speakAiReply(content){
+  const [main] = splitAiNote(content);
+  if(main) speak(main, 0.95);
+}
+
 // ============ AI CHAT TỰ DO (tab Chat AI) ============
 let aiChatHistory = []; // [{role:"user"|"assistant", content:"..."}]
 let aiChatBusy = false;
@@ -1080,6 +1161,8 @@ function renderAiChatHistory(){
 function renderAiChatTab(){
   renderAiChatSetupNote();
   renderAiChatHistory();
+  const cb = document.getElementById("aiChatAutoSpeak");
+  if(cb) cb.checked = autoSpeakAiChat;
 }
 
 async function sendAiChat(){
@@ -1103,6 +1186,7 @@ async function sendAiChat(){
     const reply = await callAiWorker("chat", {}, text, aiChatHistory.slice(0,-1));
     aiChatHistory.push({role:"assistant", content:reply});
     markActivity();
+    if(autoSpeakAiChat) speakAiReply(reply);
   }catch(err){
     const msg = err.message === "CHƯA_CẤU_HÌNH"
       ? "⚠️ Chưa cấu hình AI server."
@@ -1209,6 +1293,7 @@ function startRoleplay(){
   roleplayCurrent = pool[Math.floor(Math.random()*pool.length)];
   roleplayHistory = [{role:"assistant", content: roleplayCurrent.opener}];
   renderRoleplayArea();
+  if(autoSpeakRoleplay) speakAiReply(roleplayCurrent.opener);
 }
 
 function renderRoleplayArea(){
@@ -1228,14 +1313,19 @@ function renderRoleplayArea(){
         <div class="chat-history" id="roleplayHistoryWrap"></div>
         <div class="chat-input-row">
           <input type="text" id="roleplayInput" placeholder="Type your answer in English..." onkeydown="if(event.key==='Enter')sendRoleplayReply()">
+          <button class="chat-mic-btn" id="roleplayMicBtn" onclick="toggleChatVoiceInput('roleplayInput','roleplayMicBtn')" title="Nói bằng giọng nói">🎤</button>
           <button class="btn" onclick="sendRoleplayReply()">Gửi</button>
         </div>
+        <p class="muted" id="roleplayMicStatus" style="min-height:18px;margin:4px 0 0;font-size:12px;"></p>
       </div>
+      <label class="ai-voice-toggle"><input type="checkbox" id="roleplayAutoSpeak" onchange="setAutoSpeakRoleplay(this.checked)"> 🔊 Tự đọc to câu trả lời của AI</label>
       <button class="small-btn" style="margin-top:10px;" onclick="startRoleplay()">🔄 Đổi tình huống khác</button>
     </div>
   `;
   renderRoleplaySetupNote();
   renderRoleplayHistory();
+  const cb = document.getElementById("roleplayAutoSpeak");
+  if(cb) cb.checked = autoSpeakRoleplay;
 }
 
 function renderRoleplaySetupNote(){
@@ -1295,6 +1385,7 @@ async function sendRoleplayReply(){
       addPoints(POINTS.speakGood);
     }
     markActivity();
+    if(autoSpeakRoleplay) speakAiReply(reply);
   }catch(err){
     const msg = err.message === "CHƯA_CẤU_HÌNH"
       ? "⚠️ Chưa cấu hình AI server."

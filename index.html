@@ -156,6 +156,12 @@
   }
   .mic-btn.recording{background:var(--bad);animation:pulse 1s infinite;}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(224,57,77,.5);}70%{box-shadow:0 0 0 16px rgba(224,57,77,0);}100%{box-shadow:0 0 0 0 rgba(224,57,77,0);}}
+  .chat-mic-btn{
+    width:42px;height:42px;border-radius:50%;border:none;background:var(--primary);
+    color:#fff;font-size:18px;flex:0 0 auto;cursor:pointer;
+  }
+  .chat-mic-btn.recording{background:var(--bad);animation:pulse 1s infinite;}
+  .ai-voice-toggle{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-top:10px;cursor:pointer;}
   .result-banner{
     text-align:center;border-radius:12px;padding:10px;font-weight:700;margin-top:10px;
   }
@@ -399,9 +405,12 @@
         <div class="chat-history" id="aiChatHistory"></div>
         <div class="chat-input-row">
           <input type="text" id="aiChatInput" placeholder="Type in English..." onkeydown="if(event.key==='Enter')sendAiChat()">
+          <button class="chat-mic-btn" id="aiChatMicBtn" onclick="toggleChatVoiceInput('aiChatInput','aiChatMicBtn')" title="Nói bằng giọng nói">🎤</button>
           <button class="btn" onclick="sendAiChat()">Gửi</button>
         </div>
+        <p class="muted" id="aiChatMicStatus" style="min-height:18px;margin:4px 0 0;font-size:12px;"></p>
       </div>
+      <label class="ai-voice-toggle"><input type="checkbox" id="aiChatAutoSpeak" onchange="setAutoSpeakAiChat(this.checked)"> 🔊 Tự đọc to câu trả lời của AI</label>
       <button class="small-btn" style="margin-top:10px;" onclick="resetAiChat()">Bắt đầu hội thoại mới</button>
     </div>
   </section>
