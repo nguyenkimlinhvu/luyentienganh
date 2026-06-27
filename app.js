@@ -1151,6 +1151,22 @@ function resetVocabProgress(){
   }
 }
 
+// ----- CÔNG CỤ TEST NHANH (dùng để kiểm tra % và mở khoá level ngay, không
+// cần chờ học/ôn nhiều ngày). Đánh dấu toàn bộ từ vựng ở level hiện tại là đã
+// thuộc (box=5), giúp xem ngay % lên 100% và level kế tiếp được mở khoá. -----
+function devCompleteVocabLevel(){
+  if(!confirm("Đánh dấu TOÀN BỘ từ vựng ở level hiện tại là đã thuộc (chỉ dùng để test)?")) return;
+  const items = VOCAB_DATA.filter(v=>v.level===state.currentLevelVocab);
+  items.forEach(v=>{
+    state.vocab[v.id] = {box:5, due: todayStr(), learned:true};
+  });
+  saveDB();
+  checkLevelUnlock();
+  renderLevelPills("vocabLevelPills", "vocab");
+  buildVocabQueue();
+  showToastSafe(`✅ Đã đánh dấu ${items.length} từ ở level hiện tại là đã thuộc (chỉ để test).`);
+}
+
 // ----- BÀI KIỂM TRA TỔNG HỢP TỪ VỰNG -----
 // Trắc nghiệm 4 lựa chọn: chọn nghĩa tiếng Việt đúng của từ. Dùng các từ vừa
 // ôn trong lượt này làm câu hỏi, lấy nghĩa của các từ khác (cùng level) làm
