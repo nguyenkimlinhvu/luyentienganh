@@ -573,6 +573,13 @@ let vocabWasCorrect = false;
 let vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng (có lỗi chính tả nhỏ)
 let vocabLastUserAnswer = ""; // lưu lại nội dung đã gõ để hiển thị so sánh sau khi input bị thay bằng feedback
 
+// ----- Bài kiểm tra tổng hợp sau khi ôn xong 1 lượt từ vựng -----
+let vocabQuizWords = [];   // các từ vừa ôn trong lượt này, dùng để tạo bài kiểm tra
+let vocabQuizQueue = [];   // câu hỏi trắc nghiệm đã trộn cho lượt kiểm tra
+let vocabQuizIdx = 0;
+let vocabQuizScore = 0;
+let vocabQuizAnswered = false;
+
 function getVocabState(id){
   if(!state.vocab[id]) state.vocab[id] = {box:1, due:todayStr(), learned:false};
   return state.vocab[id];
@@ -631,7 +638,8 @@ function renderVocabCard(){
   }
   if(vocabIdx >= vocabQueue.length){
     area.innerHTML = `<div class="card empty-state">✅ Bạn đã ôn hết lượt từ vựng hôm nay.<br><br>
-      <button class="btn" onclick="buildVocabQueue()">Ôn lại lượt nữa</button></div>`;
+      <button class="btn" onclick="startVocabQuiz()">📝 Làm bài kiểm tra</button>
+      <button class="small-btn" style="margin-top:10px;" onclick="buildVocabQueue()">Ôn lại lượt nữa</button></div>`;
     return;
   }
   const v = vocabQueue[vocabIdx];
@@ -878,6 +886,110 @@ function resetVocabProgress(){
     buildVocabQueue();
     renderHomeStats();
   }
+}
+
+// ----- BÀI KIỂM TRA TỔNG HỢP TỪ VỰNG -----
+// Trắc nghiệm 4 lựa chọn: chọn nghĩa tiếng Việt đúng của từ. Dùng các từ vừa
+// ôn trong lượt này làm câu hỏi, lấy nghĩa của các từ khác (cùng level) làm
+// phương án nhiễu cho đa dạng.
+function startVocabQuiz(){
+  vocabQuizWords = vocabQueue.slice();
+  vocabQuizQueue = shuffleArray(vocabQuizWords);
+  vocabQuizIdx = 0;
+  vocabQuizScore = 0;
+  vocabQuizAnswered = false;
+  renderVocabQuizQuestion();
+}
+
+function buildQuizChoices(correctWord){
+  const distractPool = VOCAB_DATA.filter(v => v.level===state.currentLevel && v.id !== correctWord.id);
+  const shuffledPool = shuffleArray(distractPool);
+  const distractors = shuffledPool.slice(0, 3).map(v=>v.meaning);
+  const choices = shuffleArray([correctWord.meaning, ...distractors]);
+  return choices;
+}
+
+function renderVocabQuizQuestion(){
+  const area = document.getElementById("vocabArea");
+  if(vocabQuizIdx >= vocabQuizQueue.length){
+    renderVocabQuizResult();
+    return;
+  }
+  const v = vocabQuizQueue[vocabQuizIdx];
+  const choices = buildQuizChoices(v);
+  area.innerHTML = `
+    <div class="card">
+      <div class="progress-bar"><div class="fill" style="width:${(vocabQuizIdx/vocabQuizQueue.length*100)}%"></div></div>
+      <p class="muted">📝 Bài kiểm tra từ vựng · Câu ${vocabQuizIdx+1}/${vocabQuizQueue.length}</p>
+      <h2>${v.word} <span style="font-size:13px;color:var(--muted);font-weight:400;">${v.phon}</span></h2>
+      <p class="muted">Từ này có nghĩa là gì?</p>
+      <div id="vocabQuizOpts">
+        ${choices.map((c,i)=>`<button class="opt-btn" onclick="answerVocabQuiz(${i}, '${v.id}')">${escapeHtml(c)}</button>`).join("")}
+      </div>
+      <div id="vocabQuizFeedback"></div>
+    </div>
+  `;
+  area.dataset.quizChoices = JSON.stringify(choices);
+  area.dataset.quizCorrect = v.meaning;
+}
+
+function answerVocabQuiz(choiceIdx, wordId){
+  if(vocabQuizAnswered) return;
+  vocabQuizAnswered = true;
+
+  const v = vocabQuizQueue[vocabQuizIdx];
+  const area = document.getElementById("vocabArea");
+  const choices = JSON.parse(area.dataset.quizChoices || "[]");
+  const chosenMeaning = choices[choiceIdx];
+  const correct = chosenMeaning === v.meaning;
+
+  if(correct) vocabQuizScore++;
+
+  const buttons = document.querySelectorAll("#vocabQuizOpts .opt-btn");
+  buttons.forEach((b,i)=>{
+    b.onclick = null;
+    if(choices[i] === v.meaning) b.classList.add("correct");
+    if(i===choiceIdx && !correct) b.classList.add("wrong");
+  });
+
+  const fb = document.getElementById("vocabQuizFeedback");
+  fb.innerHTML = `<div class="result-banner ${correct?'ok':'bad'}">${correct ? '✅ Chính xác!' : '❌ Chưa đúng — đáp án: '+escapeHtml(v.meaning)}</div>
+    <button class="btn" style="margin-top:10px;" onclick="nextVocabQuizQuestion()">Tiếp theo →</button>`;
+}
+
+function nextVocabQuizQuestion(){
+  vocabQuizIdx++;
+  vocabQuizAnswered = false;
+  renderVocabQuizQuestion();
+}
+
+function vocabQuizGrade(pct){
+  if(pct >= 90) return {label:"🏆 Xuất sắc!", cls:"ok"};
+  if(pct >= 70) return {label:"👍 Khá tốt!", cls:"warn"};
+  return {label:"💪 Cần cố gắng hơn", cls:"bad"};
+}
+
+function renderVocabQuizResult(){
+  const area = document.getElementById("vocabArea");
+  const total = vocabQuizQueue.length;
+  const pct = total>0 ? Math.round((vocabQuizScore/total)*100) : 0;
+  const grade = vocabQuizGrade(pct);
+
+  // Điểm thưởng tỉ lệ theo % đúng, tối đa bằng tổng điểm "Tốt" của tất cả từ trong bài kiểm tra
+  const bonus = Math.round((pct/100) * total * POINTS.vocabGood);
+  if(bonus > 0) addPoints(bonus);
+  markActivity();
+
+  area.innerHTML = `
+    <div class="card empty-state">
+      <h2 style="margin-top:0;">${grade.label}</h2>
+      <div class="result-banner ${grade.cls}" style="font-size:22px;">${pct}%</div>
+      <p class="muted" style="margin-top:8px;">Đúng ${vocabQuizScore}/${total} câu</p>
+      ${bonus > 0 ? `<p class="muted">⭐ +${bonus} điểm thưởng</p>` : ""}
+      <button class="btn" style="margin-top:14px;" onclick="buildVocabQueue()">Ôn lượt mới</button>
+      <button class="small-btn" style="margin-top:10px;" onclick="startVocabQuiz()">Làm lại bài kiểm tra</button>
+    </div>
+  `;
 }
 
 // ============ GRAMMAR ============
