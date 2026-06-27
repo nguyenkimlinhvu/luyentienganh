@@ -441,3 +441,56 @@ const LEVEL_DATA = [
   { level:3, name:"B1 — Trung cấp", desc:"Môi trường, công nghệ, quan hệ xã hội — diễn đạt ý kiến, kể chuyện." },
   { level:4, name:"B2 — Trung cao cấp", desc:"Kinh tế, tranh luận, học thuật, idioms — giao tiếp tự tin, lập luận chặt chẽ." },
 ];
+
+// ============ BẢNG PHIÊN ÂM IPA (tiếng Anh) ============
+// group: "Phụ âm" | "Nguyên âm đơn" | "Nguyên âm đôi"
+// tip: gợi ý cách phát âm gần đúng bằng tiếng Việt (chỉ mang tính tham khảo,
+// không hoàn toàn chính xác vì 2 ngôn ngữ có hệ âm vị khác nhau)
+const IPA_DATA = [
+  // Phụ âm
+  { ipa:"/p/", group:"Phụ âm", example:"pen", tip:"như \"p\" tiếng Việt, bật hơi nhẹ", note:"" },
+  { ipa:"/b/", group:"Phụ âm", example:"book", tip:"như \"b\" tiếng Việt", note:"" },
+  { ipa:"/t/", group:"Phụ âm", example:"tea", tip:"như \"t\" tiếng Việt, bật hơi", note:"" },
+  { ipa:"/d/", group:"Phụ âm", example:"dog", tip:"như \"đ\" tiếng Việt", note:"" },
+  { ipa:"/k/", group:"Phụ âm", example:"cat", tip:"như \"c/k\" tiếng Việt", note:"" },
+  { ipa:"/g/", group:"Phụ âm", example:"go", tip:"như \"g\" tiếng Việt", note:"" },
+  { ipa:"/f/", group:"Phụ âm", example:"fish", tip:"như \"ph\" tiếng Việt, cắn nhẹ môi dưới", note:"" },
+  { ipa:"/v/", group:"Phụ âm", example:"very", tip:"răng trên chạm môi dưới, rung nhẹ — khác /w/", note:"Người Việt dễ nhầm /v/ với /w/" },
+  { ipa:"/θ/", group:"Phụ âm", example:"think", tip:"đặt lưỡi giữa 2 hàm răng, thổi hơi — không có âm tương đương trong tiếng Việt", note:"Hay bị đọc nhầm thành /s/ hoặc /t/" },
+  { ipa:"/ð/", group:"Phụ âm", example:"this", tip:"giống /θ/ nhưng có rung dây thanh — không có âm tương đương", note:"Hay bị đọc nhầm thành /d/ hoặc /z/" },
+  { ipa:"/s/", group:"Phụ âm", example:"see", tip:"như \"s\" tiếng Việt (xát nhẹ)", note:"" },
+  { ipa:"/z/", group:"Phụ âm", example:"zoo", tip:"như /s/ nhưng có rung dây thanh", note:"" },
+  { ipa:"/ʃ/", group:"Phụ âm", example:"she", tip:"như \"s\" trong tiếng Việt (\"sờ\" miền Bắc đọc nhẹ)", note:"" },
+  { ipa:"/ʒ/", group:"Phụ âm", example:"vision", tip:"như /ʃ/ nhưng có rung dây thanh, hơi giống \"d\" nhẹ", note:"" },
+  { ipa:"/h/", group:"Phụ âm", example:"hat", tip:"như \"h\" tiếng Việt", note:"" },
+  { ipa:"/m/", group:"Phụ âm", example:"man", tip:"như \"m\" tiếng Việt", note:"" },
+  { ipa:"/n/", group:"Phụ âm", example:"no", tip:"như \"n\" tiếng Việt", note:"" },
+  { ipa:"/ŋ/", group:"Phụ âm", example:"sing", tip:"như \"ng\" cuối tiếng Việt (vd \"sang\")", note:"" },
+  { ipa:"/l/", group:"Phụ âm", example:"leg", tip:"như \"l\" tiếng Việt, đầu lưỡi chạm răng trên", note:"" },
+  { ipa:"/r/", group:"Phụ âm", example:"red", tip:"cuộn lưỡi nhẹ, không chạm vào đâu — khác /l/", note:"Người Việt dễ nhầm /r/ với /l/" },
+  { ipa:"/j/", group:"Phụ âm", example:"yes", tip:"như \"d/gi\" đầu trong \"da/dùa\" miền Nam, hoặc như \"y\" trong \"yêu\"", note:"" },
+  { ipa:"/w/", group:"Phụ âm", example:"we", tip:"như \"w\" trong \"oa\", tròn môi — khác /v/", note:"Người Việt dễ nhầm /w/ với /v/" },
+  { ipa:"/tʃ/", group:"Phụ âm", example:"chair", tip:"như \"ch\" tiếng Việt", note:"" },
+  { ipa:"/dʒ/", group:"Phụ âm", example:"job", tip:"như \"j\" tiếng Anh, gần giống \"d/gi\" bật hơi", note:"" },
+  // Nguyên âm đơn
+  { ipa:"/iː/", group:"Nguyên âm đơn", example:"see", tip:"như \"i\" dài, kéo dài hơn tiếng Việt", note:"" },
+  { ipa:"/ɪ/", group:"Nguyên âm đơn", example:"sit", tip:"như \"i\" ngắn, gần giống \"i\" trong \"sit\"", note:"" },
+  { ipa:"/uː/", group:"Nguyên âm đơn", example:"food", tip:"như \"u\" dài, tròn môi", note:"" },
+  { ipa:"/ʊ/", group:"Nguyên âm đơn", example:"book", tip:"như \"u\" ngắn", note:"" },
+  { ipa:"/e/", group:"Nguyên âm đơn", example:"bed", tip:"như \"e\" tiếng Việt", note:"" },
+  { ipa:"/ə/", group:"Nguyên âm đơn", example:"about", tip:"âm \"ơ\" rất nhẹ, không nhấn — phổ biến nhất trong tiếng Anh", note:"" },
+  { ipa:"/ɜːr/", group:"Nguyên âm đơn", example:"bird", tip:"âm \"ơ\" kéo dài kèm /r/ (giọng Mỹ)", note:"" },
+  { ipa:"/ɔː/", group:"Nguyên âm đơn", example:"law", tip:"như \"o\" dài, tròn môi", note:"" },
+  { ipa:"/æ/", group:"Nguyên âm đơn", example:"cat", tip:"giữa \"a\" và \"e\", miệng mở rộng", note:"" },
+  { ipa:"/ʌ/", group:"Nguyên âm đơn", example:"cup", tip:"như \"ă\" tiếng Việt nhưng ngắn gọn", note:"" },
+  { ipa:"/ɑː/", group:"Nguyên âm đơn", example:"car", tip:"như \"a\" dài, miệng mở to", note:"" },
+  // Nguyên âm đôi
+  { ipa:"/eɪ/", group:"Nguyên âm đôi", example:"day", tip:"như \"ây\" tiếng Việt", note:"" },
+  { ipa:"/aɪ/", group:"Nguyên âm đôi", example:"my", tip:"như \"ai\" tiếng Việt", note:"" },
+  { ipa:"/ɔɪ/", group:"Nguyên âm đôi", example:"boy", tip:"như \"oi\" tiếng Việt", note:"" },
+  { ipa:"/aʊ/", group:"Nguyên âm đôi", example:"now", tip:"như \"ao\" tiếng Việt", note:"" },
+  { ipa:"/oʊ/", group:"Nguyên âm đôi", example:"go", tip:"như \"âu/ô-u\" tiếng Việt (giọng Mỹ)", note:"" },
+  { ipa:"/ɪər/", group:"Nguyên âm đôi", example:"year", tip:"như \"i-ơ\" kèm /r/", note:"" },
+  { ipa:"/eər/", group:"Nguyên âm đôi", example:"hair", tip:"như \"e-ơ\" kèm /r/", note:"" },
+  { ipa:"/ʊər/", group:"Nguyên âm đôi", example:"tour", tip:"như \"u-ơ\" kèm /r/", note:"" },
+];

@@ -837,6 +837,7 @@ function checkListen(id){
 // ============ SPEAK ============
 let recognizer = null;
 let recordingId = null;
+let currentIpaFilter = "Tất cả";
 
 function getRecognizer(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -852,6 +853,10 @@ function renderSpeakTab(){
   renderLevelPills("speakLevelPills", "speak");
   if(speakMode === "roleplay"){
     startRoleplay();
+    return;
+  }
+  if(speakMode === "ipa"){
+    renderIpaTab();
     return;
   }
   const area = document.getElementById("speakArea");
@@ -938,18 +943,64 @@ function similarity(a,b){
   return match / Math.max(wa.length, 1);
 }
 
+// So khớp câu mẫu với câu nhận diện được theo TỪNG TỪ, dùng thuật toán
+// alignment đơn giản (LCS - longest common subsequence theo thứ tự từ) để
+// biết từ nào trong câu mẫu đã được nói đúng/đủ, từ nào bị thiếu/đọc sai.
+// Trả về {pct, words:[{word, ok}]} — words giữ đúng thứ tự câu mẫu.
+function alignSpokenWords(expectedText, saidText){
+  const expected = normalize(expectedText).split(/\s+/).filter(Boolean);
+  const said = normalize(saidText).split(/\s+/).filter(Boolean);
+  const n = expected.length, m = said.length;
+
+  // dp[i][j] = độ dài LCS giữa expected[0..i) và said[0..j)
+  const dp = Array.from({length:n+1}, ()=>new Array(m+1).fill(0));
+  for(let i=1;i<=n;i++){
+    for(let j=1;j<=m;j++){
+      if(expected[i-1]===said[j-1]) dp[i][j] = dp[i-1][j-1]+1;
+      else dp[i][j] = Math.max(dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  // Truy vết để biết từ nào trong expected khớp được với said
+  const matched = new Array(n).fill(false);
+  let i=n, j=m;
+  while(i>0 && j>0){
+    if(expected[i-1]===said[j-1]){
+      matched[i-1] = true;
+      i--; j--;
+    } else if(dp[i-1][j] >= dp[i][j-1]){
+      i--;
+    } else {
+      j--;
+    }
+  }
+  const words = expected.map((w,idx)=>({word:w, ok:matched[idx]}));
+  const okCount = matched.filter(Boolean).length;
+  const pct = n>0 ? Math.round(okCount/n*100) : 0;
+  return {pct, words};
+}
+
 function scoreSpeak(id, said){
   const item = SPEAK_DATA.find(x=>x.id===id);
-  const score = similarity(item.text, said);
+  const align = alignSpokenWords(item.text, said);
   const status = document.getElementById("sp-"+id);
-  const pct = Math.round(score*100);
-  if(score >= 0.7){
-    status.innerHTML = `<span style="color:var(--good);font-weight:600;">✅ Tốt! (${pct}% khớp) +${POINTS.speakGood} điểm</span><br>Bạn nói: "${said}"`;
+  const pct = align.pct;
+  const wordsHtml = align.words.map(w=>
+    `<span style="display:inline-block;margin:2px 3px;padding:2px 8px;border-radius:8px;font-size:13px;font-weight:600;
+      background:${w.ok ? '#e6f7ed' : '#fdeaec'};color:${w.ok ? 'var(--good)' : 'var(--bad)'};">
+      ${w.ok ? '✓' : '✗'} ${escapeHtml(w.word)}
+    </span>`
+  ).join("");
+  if(pct >= 70){
+    status.innerHTML = `<span style="color:var(--good);font-weight:600;">✅ Tốt! (${pct}% khớp) +${POINTS.speakGood} điểm</span>
+      <div style="margin-top:6px;">${wordsHtml}</div>
+      <p class="muted" style="margin-top:4px;">Bạn nói: "${escapeHtml(said)}"</p>`;
     if(!state.speakDone[id]) addPoints(POINTS.speakGood);
     state.speakDone[id] = Math.max(state.speakDone[id]||0, pct);
     markActivity();
   } else {
-    status.innerHTML = `<span style="color:var(--bad);font-weight:600;">❌ Thử lại nhé (${pct}% khớp)</span><br>Bạn nói: "${said}"`;
+    status.innerHTML = `<span style="color:var(--bad);font-weight:600;">❌ Thử lại nhé (${pct}% khớp)</span>
+      <div style="margin-top:6px;">${wordsHtml}</div>
+      <p class="muted" style="margin-top:4px;">Bạn nói: "${escapeHtml(said)}" — từ có dấu ✗ là từ bạn đọc thiếu hoặc chưa rõ.</p>`;
   }
 }
 
@@ -1073,24 +1124,74 @@ let roleplayCurrent = null;
 let roleplayHistory = [];
 let roleplayBusy = false;
 
+// Xoay vòng 3 chế độ: practice (luyện câu mẫu) -> roleplay (AI đóng vai) -> ipa (bảng IPA) -> practice...
+const SPEAK_MODES = ["practice", "roleplay", "ipa"];
+const SPEAK_MODE_LABELS = {
+  practice: { btn:"🎭 Chế độ AI đóng vai", hint:"Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo." },
+  roleplay: { btn:"🔤 Bảng phiên âm IPA", hint:"AI sẽ đóng vai một nhân vật và trò chuyện cùng bạn. Hãy trả lời bằng tiếng Anh." },
+  ipa: { btn:"📋 Chế độ luyện câu mẫu", hint:"Học bảng phiên âm IPA — bấm 🔊 để nghe từng âm." },
+};
+
 function toggleSpeakMode(){
-  speakMode = speakMode === "practice" ? "roleplay" : "practice";
+  const idx = SPEAK_MODES.indexOf(speakMode);
+  speakMode = SPEAK_MODES[(idx+1) % SPEAK_MODES.length];
+
   const btn = document.getElementById("speakModeBtn");
   const hint = document.getElementById("speakModeHint");
   const speakArea = document.getElementById("speakArea");
   const roleplayArea = document.getElementById("roleplayArea");
-  if(speakMode === "roleplay"){
-    btn.textContent = "📋 Chế độ luyện câu mẫu";
-    hint.textContent = "AI sẽ đóng vai một nhân vật và trò chuyện cùng bạn. Hãy trả lời bằng tiếng Anh.";
-    speakArea.style.display = "none";
-    roleplayArea.style.display = "block";
-    startRoleplay();
-  } else {
-    btn.textContent = "🎭 Chế độ AI đóng vai";
-    hint.textContent = "Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.";
-    speakArea.style.display = "block";
-    roleplayArea.style.display = "none";
-  }
+  const ipaArea = document.getElementById("ipaArea");
+
+  const labels = SPEAK_MODE_LABELS[speakMode];
+  btn.textContent = labels.btn;
+  hint.textContent = labels.hint;
+
+  speakArea.style.display = speakMode === "practice" ? "block" : "none";
+  roleplayArea.style.display = speakMode === "roleplay" ? "block" : "none";
+  if(ipaArea) ipaArea.style.display = speakMode === "ipa" ? "block" : "none";
+
+  if(speakMode === "roleplay") startRoleplay();
+  if(speakMode === "ipa") renderIpaTab();
+}
+
+// ============ BẢNG PHIÊN ÂM IPA ============
+function renderIpaTab(){
+  const area = document.getElementById("ipaArea");
+  if(!area) return;
+  const groups = ["Tất cả", ...new Set(IPA_DATA.map(x=>x.group))];
+  const pillsHtml = groups.map(g=>
+    `<span class="topic-pill ${g===currentIpaFilter?'active':''}" onclick="selectIpaFilter('${g}')">${g}</span>`
+  ).join("");
+
+  const items = IPA_DATA.filter(x=> currentIpaFilter==="Tất cả" || x.group===currentIpaFilter);
+  const cardsHtml = items.map(x=>`
+    <div class="card" style="padding:14px;">
+      <div class="row-between">
+        <div>
+          <span style="font-size:22px;font-weight:700;color:var(--primary-dark);">${x.ipa}</span>
+          <span class="muted" style="margin-left:8px;">${x.group}</span>
+        </div>
+        <button class="small-btn" onclick="speak('${x.example.replace(/'/g,"\\'")}')">🔊 Nghe</button>
+      </div>
+      <p style="margin:8px 0 2px;font-size:15px;"><strong>Ví dụ:</strong> ${escapeHtml(x.example)}</p>
+      <p class="muted" style="margin:2px 0;">Cách đọc: ${escapeHtml(x.tip)}</p>
+      ${x.note ? `<p class="muted" style="margin:2px 0;color:var(--warn);">⚠️ ${escapeHtml(x.note)}</p>` : ""}
+    </div>
+  `).join("");
+
+  area.innerHTML = `
+    <div class="card">
+      <h2>🔤 Bảng phiên âm IPA</h2>
+      <p class="muted">Học từng âm, nghe mẫu và đọc theo. Chú ý các âm hay bị nhầm lẫn (có dấu ⚠️).</p>
+      <div>${pillsHtml}</div>
+    </div>
+    ${cardsHtml}
+  `;
+}
+
+function selectIpaFilter(g){
+  currentIpaFilter = g;
+  renderIpaTab();
 }
 
 function startRoleplay(){
