@@ -932,7 +932,12 @@ let vocabChecked = false; // đã bấm "Kiểm tra" cho từ hiện tại chưa
 let vocabWasCorrect = false;
 let vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng (có lỗi chính tả nhỏ)
 let vocabLastUserAnswer = ""; // lưu lại nội dung đã gõ để hiển thị so sánh sau khi input bị thay bằng feedback
-let vocabHintUsed = false; // đã bấm nút Gợi ý cho từ hiện tại chưa (reset mỗi khi sang từ mới)
+// Cấp độ gợi ý đã dùng cho từ hiện tại (0 = chưa dùng, reset mỗi khi sang từ mới):
+//   1 = che chữ (chỉ hiện chữ cái đầu + số ký tự còn lại, vd "g _ _ v _ s")
+//   2 = câu hỏi liên tưởng (dựa vào chủ đề + câu ví dụ có sẵn, không lộ đáp án)
+//   3 = hiện đáp án đầy đủ
+// Điểm thưởng giảm dần theo cấp cao nhất đã dùng — khuyến khích tự nhớ trước.
+let vocabHintLevel = 0;
 
 // Chế độ của thẻ từ hiện tại — random xen kẽ mỗi thẻ:
 //  "en2vi": hiện từ tiếng Anh, gõ nghĩa tiếng Việt (chế độ gốc)
@@ -977,17 +982,43 @@ function buildVocabQueue(){
   vocabQueue = shuffleArray(vocabQueue);
   vocabIdx = 0;
   vocabChecked = false;
-  vocabHintUsed = false;
+  vocabHintLevel = 0;
   vocabCardMode = Math.random() < 0.5 ? "en2vi" : "vi2en";
   renderVocabCard();
 }
 
-// Hiện gợi ý nghĩa tiếng Việt đầy đủ khi người dùng bí, không nhớ ra từ.
-// Đánh đổi: nếu sau đó trả lời đúng, điểm thưởng nhận được sẽ ít hơn bình
-// thường (xem checkVocabAnswer) — khuyến khích người học tự nhớ trước.
+// Che chữ: chỉ hiện chữ cái đầu, các chữ còn lại thay bằng "_", giữ khoảng
+// trắng/dấu trong cụm từ nhiều tiếng để người học thấy được cấu trúc.
+// VD: "gloves" -> "g _ _ _ _ _", "ice cream" -> "i _ _   _ _ _ _ _".
+function maskWord(word){
+  return word.split("").map((ch,i)=>{
+    if(ch === " ") return " ";
+    return i===0 ? ch : "_";
+  }).join(" ");
+}
+
+// Sinh câu hỏi liên tưởng (cấp 2) hoàn toàn từ dữ liệu sẵn có (topic + example
+// câu trong data.js), không gọi AI. Ẩn từ/nghĩa mục tiêu trong câu ví dụ bằng
+// "_____" để không lộ đáp án, kèm gợi ý chủ đề để kích thích liên tưởng.
+function buildAssociativeHint(v, askingForWord){
+  // askingForWord=true: người học cần đoán từ tiếng Anh (chế độ vi2en) -> ẩn v.word trong example
+  // askingForWord=false: người học cần đoán nghĩa tiếng Việt (chế độ en2vi) -> chỉ gợi ngữ cảnh, không ẩn gì thêm vì example là tiếng Anh
+  const topic = v.topic || "chủ đề này";
+  if(askingForWord){
+    const escapedWord = v.word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(escapedWord, "i");
+    const maskedExample = v.example.replace(re, "_____");
+    return `🤔 Từ này thuộc chủ đề "${topic}". Nó xuất hiện trong câu: "${maskedExample}"`;
+  }
+  return `🤔 Từ này thuộc chủ đề "${topic}". Hãy nghĩ xem trong ngữ cảnh "${topic.toLowerCase()}", từ "${v.word}" thường được dùng để nói về điều gì.`;
+}
+
+// Tăng cấp gợi ý lên 1 (tối đa 3) cho từ hiện tại. Điểm thưởng giảm dần theo
+// cấp cao nhất đã dùng (xem checkVocabAnswer) — khuyến khích người học tự
+// suy nghĩ/liên tưởng trước khi xin gợi ý mạnh hơn.
 function useVocabHint(){
-  if(vocabChecked || vocabHintUsed) return;
-  vocabHintUsed = true;
+  if(vocabChecked || vocabHintLevel >= 3) return;
+  vocabHintLevel++;
   renderVocabCard();
 }
 
@@ -1023,6 +1054,26 @@ function renderVocabCard(){
   const v = vocabQueue[vocabIdx];
   const vs = getVocabState(v.id);
   const isVi2En = vocabCardMode === "vi2en";
+
+  // Nội dung gợi ý theo cấp hiện tại (0 = chưa xin gợi ý).
+  let hintHtml = "";
+  if(!vocabChecked && vocabHintLevel === 0){
+    hintHtml = `<div class="hint">${isVi2En ? "Gõ đúng chính tả từ tiếng Anh này 👇" : "Gõ nghĩa tiếng Việt của từ này 👇"}</div>`;
+  } else if(!vocabChecked && vocabHintLevel === 1){
+    hintHtml = `<div class="hint">🔡 Gợi ý (che chữ): <strong>${escapeHtml(maskWord(isVi2En ? v.word : v.meaning))}</strong></div>`;
+  } else if(!vocabChecked && vocabHintLevel === 2){
+    hintHtml = `<div class="hint">${escapeHtml(maskWord(isVi2En ? v.word : v.meaning))}</div>
+      <div class="hint" style="margin-top:6px;font-size:14px;">${escapeHtml(buildAssociativeHint(v, isVi2En))}</div>`;
+  } else if(!vocabChecked && vocabHintLevel >= 3){
+    hintHtml = `<div class="hint">💡 Đáp án: <strong>${escapeHtml(isVi2En ? v.word : v.meaning)}</strong></div>`;
+  }
+
+  const hintButtonLabels = {
+    0: "💡 Gợi ý cấp 1: che chữ (giảm nhẹ điểm thưởng)",
+    1: "🤔 Gợi ý cấp 2: câu hỏi liên tưởng (giảm thêm điểm thưởng)",
+    2: "❗ Gợi ý cấp 3: hiện đáp án (mất điểm thưởng)"
+  };
+
   area.innerHTML = `
     <div class="flash-wrap">
       <div class="progress-bar" style="width:100%;"><div class="fill" style="width:${(vocabIdx/vocabQueue.length*100)}%"></div></div>
@@ -1036,18 +1087,14 @@ function renderVocabCard(){
             <div class="meaning">${v.word}</div>
             <div class="phon">${v.phon}</div>
             <div class="example">"${v.example}"</div>
-          ` : (vocabHintUsed
-                ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.word)}</strong></div>`
-                : `<div class="hint">Gõ đúng chính tả từ tiếng Anh này 👇</div>`)}
+          ` : hintHtml}
         ` : `
           <div class="word">${v.word}</div>
           <div class="phon">${v.phon}</div>
           ${vocabChecked ? `
             <div class="meaning">${v.meaning}</div>
             <div class="example">"${v.example}"</div>
-          ` : (vocabHintUsed
-                ? `<div class="hint">💡 Gợi ý: <strong>${escapeHtml(v.meaning)}</strong></div>`
-                : `<div class="hint">Gõ nghĩa tiếng Việt của từ này 👇</div>`)}
+          ` : hintHtml}
         `}
       </div>
       <button class="btn secondary" onclick="speak('${v.word.replace(/'/g,"\\'")}')">🔊 Nghe phát âm</button>
@@ -1057,7 +1104,7 @@ function renderVocabCard(){
           onkeydown="if(event.key==='Enter') checkVocabAnswer();" autocomplete="off" autocapitalize="off">
         <button class="vocab-check-btn" onclick="checkVocabAnswer()">Kiểm tra</button>
       </div>
-      ${!vocabHintUsed ? `<button class="small-btn" style="margin-top:8px;" onclick="useVocabHint()">💡 Gợi ý (sẽ giảm điểm thưởng nếu trả lời đúng)</button>` : ""}
+      ${vocabHintLevel < 3 ? `<button class="small-btn" style="margin-top:8px;" onclick="useVocabHint()">${hintButtonLabels[vocabHintLevel]}</button>` : ""}
       ` : `
       <div class="vocab-feedback ${vocabWasCorrect ? 'correct' : 'wrong'}">
         ${vocabWasCorrect
@@ -1276,9 +1323,14 @@ function checkVocabAnswer(){
   if(vocabWasCorrect){
     vs.box = Math.min(5, vs.box+1);
     intervalDays = [1,2,4,7,14][vs.box-1] || 14;
-    // Nếu đã bấm nút Gợi ý cho từ này, điểm thưởng giảm một nửa (khuyến khích
-    // người học tự nhớ trước khi xin gợi ý).
-    earned = vocabHintUsed ? Math.round(POINTS.vocabGood/2) : POINTS.vocabGood;
+    // Điểm thưởng giảm dần theo cấp gợi ý cao nhất đã dùng — khuyến khích
+    // người học tự suy nghĩ/liên tưởng trước khi xin gợi ý mạnh hơn:
+    //   cấp 0 (không xin gợi ý): điểm đầy đủ
+    //   cấp 1 (che chữ): giảm nhẹ (75%)
+    //   cấp 2 (câu hỏi liên tưởng): giảm vừa (50%)
+    //   cấp 3 (đáp án đầy đủ): giảm nhiều (25%)
+    const hintMultiplier = [1, 0.75, 0.5, 0.25][vocabHintLevel] ?? 0.25;
+    earned = Math.round(POINTS.vocabGood * hintMultiplier);
     if(vs.box>=5) vs.learned = true;
   } else {
     vs.box = 1;
@@ -1298,7 +1350,7 @@ function checkVocabAnswer(){
 function nextVocabCard(){
   vocabIdx++;
   vocabChecked = false;
-  vocabHintUsed = false;
+  vocabHintLevel = 0;
   vocabCardMode = Math.random() < 0.5 ? "en2vi" : "vi2en";
   renderVocabCard();
 }
