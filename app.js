@@ -434,6 +434,8 @@ let vocabQueue = [];
 let vocabIdx = 0;
 let vocabChecked = false; // đã bấm "Kiểm tra" cho từ hiện tại chưa
 let vocabWasCorrect = false;
+let vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng (có lỗi chính tả nhỏ)
+let vocabLastUserAnswer = ""; // lưu lại nội dung đã gõ để hiển thị so sánh sau khi input bị thay bằng feedback
 
 function getVocabState(id){
   if(!state.vocab[id]) state.vocab[id] = {box:1, due:todayStr(), learned:false};
@@ -517,8 +519,20 @@ function renderVocabCard(){
       </div>
       ` : `
       <div class="vocab-feedback ${vocabWasCorrect ? 'correct' : 'wrong'}">
-        ${vocabWasCorrect ? '✅ Chính xác!' : '❌ Chưa đúng — học lại từ này nhé.'}
+        ${vocabWasCorrect
+          ? (vocabFuzzyInfo
+              ? `⚠️ Gần đúng (${vocabFuzzyInfo.pct}% khớp) — chú ý chính tả!`
+              : '✅ Chính xác!')
+          : (vocabFuzzyInfo
+              ? `❌ Chưa đúng (${vocabFuzzyInfo.pct}% khớp) — học lại từ này nhé.`
+              : '❌ Chưa đúng — học lại từ này nhé.')}
       </div>
+      ${vocabFuzzyInfo ? `
+        <p class="muted" style="text-align:center;margin-top:2px;">
+          Đáp án chuẩn: <span style="font-family:monospace;font-size:15px;">${highlightDiff(vocabLastUserAnswer, vocabFuzzyInfo.correctAnswer)}</span>
+          <br>(chữ <span style="color:var(--bad);text-decoration:underline;font-weight:700;">gạch đỏ</span> là vị trí bạn gõ sai/khác)
+        </p>
+      ` : ""}
       <button class="vocab-next-btn" onclick="nextVocabCard()">Tiếp tục →</button>
       `}
       <p class="muted">Hộp ${vs.box}/5 · ${vocabIdx+1} / ${vocabQueue.length} · ⭐ ${state.points||0} điểm</p>
@@ -561,12 +575,136 @@ function answerMatchesMeaning(userAnswer, rawMeaning){
   return false;
 }
 
+// Khoảng cách Levenshtein (số bước chỉnh sửa: thêm/xoá/đổi 1 ký tự) giữa 2 chuỗi.
+function levenshteinDistance(a, b){
+  const m = a.length, n = b.length;
+  if(m===0) return n;
+  if(n===0) return m;
+  const dp = new Array(n+1);
+  for(let j=0;j<=n;j++) dp[j] = j;
+  for(let i=1;i<=m;i++){
+    let prev = dp[0];
+    dp[0] = i;
+    for(let j=1;j<=n;j++){
+      const tmp = dp[j];
+      if(a[i-1] === b[j-1]){
+        dp[j] = prev;
+      } else {
+        dp[j] = Math.min(prev+1, dp[j]+1, dp[j-1]+1);
+      }
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+// Bỏ dấu tiếng Việt (dấu thanh + dấu mũ/móc) để so sánh phụ âm/nguyên âm gốc,
+// giúp lỗi "quên gõ dấu" (vd "chi gai" vs "chị gái") không bị tính nặng như
+// gõ sai hẳn ký tự khác.
+function stripDiacritics(s){
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D");
+}
+
+// % giống nhau giữa 2 chuỗi đã chuẩn hoá, dựa trên khoảng cách Levenshtein.
+// Nếu bản bỏ dấu khớp tuyệt đối (chỉ thiếu/sai dấu thanh), coi là lỗi nhỏ rất
+// nhẹ (95%) thay vì tính theo Levenshtein thô trên ký tự Unicode có dấu (mỗi
+// dấu thanh khác nhau bị tính là 1 bước chỉnh sửa, nặng tay với từ ngắn).
+function similarityPercent(a, b){
+  if(a.length===0 && b.length===0) return 100;
+  if(stripDiacritics(a) === stripDiacritics(b) && a !== b) return 95;
+  const dist = levenshteinDistance(a, b);
+  const maxLen = Math.max(a.length, b.length, 1);
+  return Math.round((1 - dist/maxLen) * 100);
+}
+
+// So sánh userAnswer với từng đáp án hợp lệ (tách theo logic answerMatchesMeaning)
+// và trả về đáp án có % giống cao nhất, kèm % đó. Dùng để báo "gần đúng".
+function closestMeaningCandidates(rawMeaning){
+  const candidates = [normalizeAnswer(rawMeaning)];
+  if(rawMeaning.includes("/")){
+    rawMeaning.split("/").map(p=>normalizeAnswer(p)).filter(p=>p.length>0).forEach(p=>{
+      if(!candidates.includes(p)) candidates.push(p);
+    });
+    const rawParts = rawMeaning.split("/");
+    if(rawParts.length===2){
+      const before = rawParts[0].trim();
+      const afterWords = rawParts[1].trim().split(/\s+/);
+      if(before.split(/\s+/).length===1 && afterWords.length>1){
+        const sharedSuffix = afterWords.slice(1).join(" ");
+        const combined = normalizeAnswer(before + " " + sharedSuffix);
+        if(!candidates.includes(combined)) candidates.push(combined);
+      }
+    }
+  }
+  return candidates;
+}
+
+function bestMatchInfo(userAnswer, rawMeaning){
+  const candidates = closestMeaningCandidates(rawMeaning);
+  let best = {answer: candidates[0], pct: -1, dist: Infinity};
+  candidates.forEach(c=>{
+    const pct = similarityPercent(userAnswer, c);
+    const dist = levenshteinDistance(userAnswer, c);
+    if(pct > best.pct) best = {answer: c, pct, dist};
+  });
+  return best;
+}
+
+// Cho phép "gần đúng" khi: đạt ngưỡng % HOẶC chỉ lệch tối đa 1 ký tự edit
+// (thêm/xoá/đổi 1 chữ) — vì với từ tiếng Việt ngắn (3-8 ký tự), 1 lỗi gõ vẫn
+// kéo % giống xuống dưới ngưỡng do trọng số mỗi ký tự khá lớn.
+function isFuzzyAcceptable(best){
+  if(best.pct >= VOCAB_FUZZY_THRESHOLD) return true;
+  if(best.dist <= 1) return true;
+  return false;
+}
+
+// Đánh dấu vị trí ký tự khác nhau giữa userAnswer và đáp án đúng (so khớp
+// theo vị trí, đơn giản và dễ hiểu cho người học — không cần thuật toán
+// alignment phức tạp). Trả về HTML với ký tự sai/thiếu được bôi đỏ.
+function highlightDiff(userAnswer, correctAnswer){
+  const maxLen = Math.max(userAnswer.length, correctAnswer.length);
+  let html = "";
+  for(let i=0;i<maxLen;i++){
+    const cu = userAnswer[i];
+    const cc = correctAnswer[i];
+    if(cc === undefined) break; // đáp án ngắn hơn, phần dư của user bỏ qua khi hiển thị đáp án
+    if(cu === cc){
+      html += escapeHtml(cc);
+    } else {
+      html += `<span style="color:var(--bad);text-decoration:underline;font-weight:700;">${escapeHtml(cc)}</span>`;
+    }
+  }
+  return html;
+}
+
+const VOCAB_FUZZY_THRESHOLD = 80; // % giống tối thiểu để chấp nhận là "gần đúng"
+
 function checkVocabAnswer(){
   if(vocabChecked) return;
   const v = vocabQueue[vocabIdx];
   const inputEl = document.getElementById("vocabAnswerInput");
   const userAnswer = normalizeAnswer(inputEl ? inputEl.value : "");
-  vocabWasCorrect = userAnswer.length>0 && answerMatchesMeaning(userAnswer, v.meaning);
+  vocabLastUserAnswer = userAnswer;
+
+  vocabFuzzyInfo = null; // {pct, correctAnswer} khi đúng nhờ gần đúng, null khi khớp tuyệt đối hoặc sai hẳn
+
+  const exactMatch = userAnswer.length>0 && answerMatchesMeaning(userAnswer, v.meaning);
+  if(exactMatch){
+    vocabWasCorrect = true;
+  } else if(userAnswer.length>0){
+    const best = bestMatchInfo(userAnswer, v.meaning);
+    if(isFuzzyAcceptable(best)){
+      vocabWasCorrect = true;
+      vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:false};
+    } else {
+      vocabWasCorrect = false;
+      // Vẫn lưu gợi ý gần nhất để hiển thị vị trí sai, dù chưa đạt ngưỡng đúng
+      vocabFuzzyInfo = {pct: best.pct, correctAnswer: best.answer, isWrong:true};
+    }
+  } else {
+    vocabWasCorrect = false;
+  }
   vocabChecked = true;
 
   const vs = getVocabState(v.id);
