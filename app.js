@@ -255,6 +255,75 @@ function showToast(msg){
 }
 
 // ============ TTS HELPER ============
+// Ưu tiên các giọng đọc tiếng Anh tự nhiên (Google/Microsoft Natural/Online) thay vì
+// giọng robot mặc định của hệ thống. Người dùng cũng có thể tự chọn giọng yêu thích,
+// lựa chọn được lưu theo từng máy/trình duyệt (localStorage), không tốn phí.
+let cachedVoices = [];
+let preferredVoiceName = localStorage.getItem("ehoc_tts_voice") || "";
+
+// Thứ tự ưu tiên: tên giọng chứa các từ khoá này thường nghe tự nhiên hơn giọng robot mặc định
+const VOICE_QUALITY_HINTS = [
+  "Google US English", "Google UK English Female", "Google UK English Male",
+  "Microsoft Aria", "Microsoft Jenny", "Microsoft Guy", "Microsoft Online",
+  "Natural", "Samantha", "Daniel"
+];
+
+function refreshVoiceList(){
+  if(!('speechSynthesis' in window)) return [];
+  const voices = window.speechSynthesis.getVoices() || [];
+  cachedVoices = voices.filter(v => /^en/i.test(v.lang));
+  return cachedVoices;
+}
+
+function pickBestEnglishVoice(){
+  const voices = cachedVoices.length ? cachedVoices : refreshVoiceList();
+  if(voices.length === 0) return null;
+
+  if(preferredVoiceName){
+    const chosen = voices.find(v => v.name === preferredVoiceName);
+    if(chosen) return chosen;
+  }
+
+  for(const hint of VOICE_QUALITY_HINTS){
+    const match = voices.find(v => v.name.indexOf(hint) !== -1);
+    if(match) return match;
+  }
+
+  return voices.find(v => v.lang === "en-US") || voices[0];
+}
+
+function setPreferredVoice(name){
+  preferredVoiceName = name || "";
+  localStorage.setItem("ehoc_tts_voice", preferredVoiceName);
+}
+
+function renderVoicePicker(){
+  const sel = document.getElementById("ttsVoiceSelect");
+  if(!sel) return;
+  const voices = cachedVoices.length ? cachedVoices : refreshVoiceList();
+  if(voices.length === 0){
+    sel.innerHTML = `<option value="">(Không có giọng đọc khả dụng)</option>`;
+    return;
+  }
+  sel.innerHTML = voices.map(v=>{
+    const label = v.name + (v.lang ? " (" + v.lang + ")" : "");
+    return `<option value="${escapeHtml(v.name)}">${escapeHtml(label)}</option>`;
+  }).join("");
+
+  const best = pickBestEnglishVoice();
+  sel.value = preferredVoiceName && voices.some(v=>v.name===preferredVoiceName)
+    ? preferredVoiceName
+    : (best ? best.name : "");
+}
+
+if(typeof window !== "undefined" && 'speechSynthesis' in window){
+  refreshVoiceList();
+  window.speechSynthesis.onvoiceschanged = ()=>{
+    refreshVoiceList();
+    renderVoicePicker();
+  };
+}
+
 function speak(text, rate){
   if(!('speechSynthesis' in window)){
     showToast("Thiết bị không hỗ trợ phát âm thanh.");
@@ -264,6 +333,9 @@ function speak(text, rate){
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "en-US";
   u.rate = rate || 0.95;
+  u.pitch = 1;
+  const voice = pickBestEnglishVoice();
+  if(voice) u.voice = voice;
   window.speechSynthesis.speak(u);
 }
 
@@ -1163,6 +1235,7 @@ function renderAiChatTab(){
   renderAiChatHistory();
   const cb = document.getElementById("aiChatAutoSpeak");
   if(cb) cb.checked = autoSpeakAiChat;
+  renderVoicePicker();
 }
 
 async function sendAiChat(){
