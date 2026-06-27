@@ -1131,6 +1131,7 @@ function checkVocabAnswer(){
   addPoints(earned);
   markActivity();
   renderVocabCard();
+  renderLevelPills("vocabLevelPills", "vocab"); // cập nhật % ngay, không cần đợi đổi tab
 }
 
 function nextVocabCard(){
@@ -1216,6 +1217,9 @@ function answerVocabQuiz(choiceIdx, wordId){
     const due = new Date(Date.now() + intervalDays*86400000);
     vs.due = due.toISOString().slice(0,10);
     if(vs.box>=5) vs.learned = true;
+    saveDB();
+    checkLevelUnlock();
+    renderLevelPills("vocabLevelPills", "vocab"); // cập nhật % ngay khi làm quiz
   }
 
   const buttons = document.querySelectorAll("#vocabQuizOpts .opt-btn");
