@@ -343,15 +343,19 @@ function toggleRecord(id){
     if(recognizer) recognizer.stop();
     return;
   }
-  if(recognizer){ recognizer.stop(); }
+  if(recognizer){ try{ recognizer.stop(); }catch(e){} }
+
+  const btn = document.getElementById("mic-"+id);
+  const status = document.getElementById("sp-"+id);
+
   recognizer = getRecognizer();
   if(!recognizer){
+    status.textContent = "⚠️ Trình duyệt này không hỗ trợ nhận diện giọng nói.";
     showToast("Không hỗ trợ nhận diện giọng nói trên thiết bị này.");
     return;
   }
+
   recordingId = id;
-  const btn = document.getElementById("mic-"+id);
-  const status = document.getElementById("sp-"+id);
   btn.classList.add("recording");
   status.textContent = "Đang nghe... hãy đọc câu trên.";
 
@@ -360,7 +364,17 @@ function toggleRecord(id){
     scoreSpeak(id, said);
   };
   recognizer.onerror = (e)=>{
-    status.textContent = "Không nghe rõ, hãy thử lại.";
+    let msg = "Không nghe rõ, hãy thử lại.";
+    if(e.error === "not-allowed" || e.error === "service-not-allowed"){
+      msg = "⚠️ Chưa được cấp quyền micro. Vào Cài đặt > Safari (hoặc Cài đặt trang web) để cho phép Microphone, rồi tải lại trang.";
+    } else if(e.error === "no-speech"){
+      msg = "Không nghe thấy gì, hãy thử nói to và rõ hơn.";
+    } else if(e.error === "audio-capture"){
+      msg = "⚠️ Không tìm thấy micro trên thiết bị này.";
+    } else if(e.error === "network"){
+      msg = "⚠️ Lỗi kết nối mạng khi nhận diện giọng nói, hãy thử lại.";
+    }
+    status.textContent = msg;
     btn.classList.remove("recording");
     recordingId = null;
   };
@@ -368,7 +382,14 @@ function toggleRecord(id){
     btn.classList.remove("recording");
     recordingId = null;
   };
-  recognizer.start();
+
+  try{
+    recognizer.start();
+  }catch(err){
+    status.textContent = "⚠️ Không thể khởi động micro: " + err.message;
+    btn.classList.remove("recording");
+    recordingId = null;
+  }
 }
 
 function normalize(str){
