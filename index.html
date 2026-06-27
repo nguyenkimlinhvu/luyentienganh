@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3b5bdb">
+<title>Luyện Anh Mỗi Ngày</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
+<style>
+  :root{
+    --primary:#3b5bdb;
+    --primary-dark:#2a44ad;
+    --bg:#f4f6fb;
+    --card:#ffffff;
+    --text:#1d2230;
+    --muted:#6b7280;
+    --good:#22a35a;
+    --bad:#e0394d;
+    --warn:#f0a500;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding-bottom:78px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+    color:white;
+    padding:18px 18px 22px;
+    border-radius:0 0 22px 22px;
+  }
+  header h1{margin:0;font-size:20px;}
+  header p{margin:4px 0 0;font-size:13px;opacity:.85;}
+  .stats-row{display:flex;gap:10px;margin-top:14px;}
+  .stat{
+    flex:1;background:rgba(255,255,255,.15);
+    border-radius:12px;padding:10px;text-align:center;
+  }
+  .stat .num{font-size:20px;font-weight:700;}
+  .stat .label{font-size:11px;opacity:.85;}
+  main{padding:14px;max-width:520px;margin:0 auto;}
+  .screen{display:none;}
+  .screen.active{display:block;}
+  .card{
+    background:var(--card);
+    border-radius:var(--radius);
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .card h2{margin:0 0 10px;font-size:16px;}
+  .home-tile{
+    display:flex;align-items:center;gap:12px;
+    cursor:pointer;
+  }
+  .home-tile .emoji{font-size:28px;width:46px;text-align:center;}
+  .home-tile .title{font-weight:600;font-size:15px;}
+  .home-tile .sub{font-size:12px;color:var(--muted);}
+  .home-tile .badge{
+    margin-left:auto;background:var(--primary);color:#fff;
+    font-size:12px;border-radius:20px;padding:3px 10px;font-weight:600;
+  }
+  nav.tabbar{
+    position:fixed;bottom:0;left:0;right:0;
+    background:#fff;border-top:1px solid #e8e8ee;
+    display:flex;padding:6px 4px env(safe-area-inset-bottom,6px);
+    z-index:50;
+  }
+  nav.tabbar button{
+    flex:1;background:none;border:none;
+    display:flex;flex-direction:column;align-items:center;
+    gap:2px;padding:6px 0;color:var(--muted);font-size:11px;
+  }
+  nav.tabbar button.active{color:var(--primary);font-weight:700;}
+  nav.tabbar button .ic{font-size:20px;}
+  .flash-wrap{display:flex;flex-direction:column;align-items:center;gap:16px;}
+  .flashcard{
+    width:100%;min-height:180px;background:var(--card);
+    border-radius:20px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.08);padding:20px;cursor:pointer;
+    border:2px solid #eef0fa;
+  }
+  .flashcard .word{font-size:28px;font-weight:700;}
+  .flashcard .phon{color:var(--muted);font-size:14px;margin-top:4px;}
+  .flashcard .meaning{font-size:18px;margin-top:14px;color:var(--primary-dark);font-weight:600;}
+  .flashcard .example{font-size:13px;color:var(--muted);margin-top:10px;}
+  .flashcard .hint{font-size:12px;color:var(--muted);margin-top:12px;}
+  .rate-row{display:flex;gap:8px;width:100%;}
+  .rate-row button{
+    flex:1;border:none;border-radius:12px;padding:12px 4px;
+    font-size:13px;font-weight:600;color:white;
+  }
+  .rate-again{background:var(--bad);}
+  .rate-hard{background:var(--warn);}
+  .rate-good{background:var(--good);}
+  .progress-bar{height:6px;background:#e8e8ee;border-radius:6px;overflow:hidden;margin-bottom:10px;}
+  .progress-bar .fill{height:100%;background:var(--primary);transition:width .3s;}
+  .btn{
+    display:inline-block;background:var(--primary);color:#fff;border:none;
+    padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;
+    cursor:pointer;width:100%;text-align:center;
+  }
+  .btn.secondary{background:#eef0fa;color:var(--primary-dark);}
+  .btn.outline{background:transparent;border:2px solid var(--primary);color:var(--primary);}
+  .opt-btn{
+    display:block;width:100%;text-align:left;background:#f6f7fb;
+    border:2px solid #eef0fa;border-radius:12px;padding:12px 14px;
+    margin-bottom:8px;font-size:14px;cursor:pointer;color:var(--text);
+  }
+  .opt-btn.correct{background:#e6f7ed;border-color:var(--good);}
+  .opt-btn.wrong{background:#fdeaec;border-color:var(--bad);}
+  .topic-pill{
+    display:inline-block;background:#eef0fa;color:var(--primary-dark);
+    font-size:12px;padding:4px 10px;border-radius:20px;margin:2px 4px 2px 0;
+    cursor:pointer;font-weight:600;
+  }
+  .topic-pill.active{background:var(--primary);color:#fff;}
+  .listen-text{font-size:15px;line-height:1.6;background:#f6f7fb;border-radius:12px;padding:14px;margin:10px 0;}
+  .listen-text.blurred{filter:blur(5px);user-select:none;}
+  .mic-btn{
+    width:84px;height:84px;border-radius:50%;background:var(--primary);
+    border:none;color:white;font-size:30px;margin:14px auto;display:block;
+  }
+  .mic-btn.recording{background:var(--bad);animation:pulse 1s infinite;}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(224,57,77,.5);}70%{box-shadow:0 0 0 16px rgba(224,57,77,0);}100%{box-shadow:0 0 0 0 rgba(224,57,77,0);}}
+  .result-banner{
+    text-align:center;border-radius:12px;padding:10px;font-weight:700;margin-top:10px;
+  }
+  .result-banner.ok{background:#e6f7ed;color:var(--good);}
+  .result-banner.bad{background:#fdeaec;color:var(--bad);}
+  .muted{color:var(--muted);font-size:13px;}
+  .center{text-align:center;}
+  .row-between{display:flex;justify-content:space-between;align-items:center;}
+  select,input[type=text]{
+    width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;font-size:14px;
+  }
+  .small-btn{background:#eef0fa;border:none;border-radius:8px;padding:6px 10px;font-size:12px;color:var(--primary-dark);}
+  .empty-state{text-align:center;padding:30px 10px;color:var(--muted);}
+  .toast{
+    position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+    background:#1d2230;color:#fff;padding:10px 18px;border-radius:30px;
+    font-size:13px;z-index:100;opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="greeting">Chào bạn 👋</h1>
+  <p id="todayStr"></p>
+  <div class="stats-row">
+    <div class="stat"><div class="num" id="streakNum">0</div><div class="label">🔥 ngày liên tiếp</div></div>
+    <div class="stat"><div class="num" id="dueNum">0</div><div class="label">từ cần ôn</div></div>
+    <div class="stat"><div class="num" id="learnedNum">0</div><div class="label">đã học</div></div>
+  </div>
+</header>
+
+<main>
+
+  <!-- HOME -->
+  <section class="screen active" id="screen-home">
+    <div class="card home-tile" onclick="goTab('vocab')">
+      <div class="emoji">🗂️</div>
+      <div>
+        <div class="title">Từ vựng (Flashcard)</div>
+        <div class="sub">Lặp lại ngắt quãng, nhớ lâu hơn</div>
+      </div>
+      <div class="badge" id="homeVocabBadge">0</div>
+    </div>
+    <div class="card home-tile" onclick="goTab('grammar')">
+      <div class="emoji">📘</div>
+      <div>
+        <div class="title">Ngữ pháp & câu mẫu</div>
+        <div class="sub">Bài tập điền câu, chọn đáp án</div>
+      </div>
+      <div class="badge" id="homeGrammarBadge">0</div>
+    </div>
+    <div class="card home-tile" onclick="goTab('listen')">
+      <div class="emoji">🎧</div>
+      <div>
+        <div class="title">Luyện nghe</div>
+        <div class="sub">Nghe đoạn ngắn, điền từ còn thiếu</div>
+      </div>
+      <div class="badge" id="homeListenBadge">0</div>
+    </div>
+    <div class="card home-tile" onclick="goTab('speak')">
+      <div class="emoji">🎙️</div>
+      <div>
+        <div class="title">Luyện nói & phát âm</div>
+        <div class="sub">Đọc to, so khớp với câu mẫu</div>
+      </div>
+      <div class="badge" id="homeSpeakBadge">0</div>
+    </div>
+    <div class="card">
+      <h2>Tiến độ tuần này</h2>
+      <div class="progress-bar"><div class="fill" id="weekFill" style="width:0%"></div></div>
+      <p class="muted" id="weekText">Chưa có hoạt động nào.</p>
+    </div>
+  </section>
+
+  <!-- VOCAB -->
+  <section class="screen" id="screen-vocab">
+    <div class="card">
+      <div class="row-between">
+        <h2 style="margin:0;">Từ vựng hôm nay</h2>
+        <button class="small-btn" onclick="resetVocabProgress()">Đặt lại</button>
+      </div>
+      <div id="topicPills"></div>
+    </div>
+    <div id="vocabArea"></div>
+  </section>
+
+  <!-- GRAMMAR -->
+  <section class="screen" id="screen-grammar">
+    <div class="card">
+      <h2>Ngữ pháp & câu mẫu</h2>
+      <p class="muted">Chọn đáp án đúng cho mỗi câu.</p>
+    </div>
+    <div id="grammarArea"></div>
+  </section>
+
+  <!-- LISTEN -->
+  <section class="screen" id="screen-listen">
+    <div class="card">
+      <h2>Luyện nghe</h2>
+      <p class="muted">Nhấn 🔊 để nghe, đoán từ còn thiếu rồi bấm hiện đáp án.</p>
+    </div>
+    <div id="listenArea"></div>
+  </section>
+
+  <!-- SPEAK -->
+  <section class="screen" id="screen-speak">
+    <div class="card">
+      <h2>Luyện nói & phát âm</h2>
+      <p class="muted">Nhấn 🔊 để nghe mẫu, sau đó nhấn mic và đọc theo.</p>
+    </div>
+    <div id="speakArea"></div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<nav class="tabbar">
+  <button data-tab="home" onclick="goTab('home')"><span class="ic">🏠</span>Trang chính</button>
+  <button data-tab="vocab" onclick="goTab('vocab')"><span class="ic">🗂️</span>Từ vựng</button>
+  <button data-tab="grammar" onclick="goTab('grammar')"><span class="ic">📘</span>Ngữ pháp</button>
+  <button data-tab="listen" onclick="goTab('listen')"><span class="ic">🎧</span>Nghe</button>
+  <button data-tab="speak" onclick="goTab('speak')"><span class="ic">🎙️</span>Nói</button>
+</nav>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
